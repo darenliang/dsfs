@@ -150,8 +150,6 @@ func (fs *Dsfs) Open(path string, flags int) (int, uint64) {
 	// other than the root folder, since some file explorers like to eagerly
 	// prob files for thumbnails, etc.
 	go func() {
-		fs.open[path].lock.Lock()
-		defer fs.open[path].lock.Unlock()
 		buffer := make([]byte, MaxDiscordFileSize)
 		for _, id := range tx.FileIDs {
 			n, err := getDataFile(DataChannelID, id, buffer)
@@ -159,7 +157,9 @@ func (fs *Dsfs) Open(path string, flags int) (int, uint64) {
 				fmt.Println("Network error with Discord", err)
 				return
 			}
+			fs.open[path].lock.Lock()
 			fs.open[path].data = append(fs.open[path].data, buffer[:n]...)
+			fs.open[path].lock.Unlock()
 		}
 	}()
 
