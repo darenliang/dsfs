@@ -89,12 +89,13 @@ func setupDB(dg *discordgo.Session, guildID string) (*DB, error) {
 				batch[i], batch[j] = batch[j], batch[i]
 			}
 
-			// Apply TX batch
-			applyMessageTxs(&db, batch)
+			messages = append(messages, batch...)
 			if len(batch) != MaxDiscordMessageRequest {
 				break
 			}
 		}
+
+		applyMessageTxs(&db, messages)
 	} else {
 		tx := Tx{
 			Tx:   WriteTx,
