@@ -6,20 +6,28 @@ import (
 	"errors"
 	"github.com/bwmarrin/discordgo"
 	"github.com/hashicorp/go-immutable-radix"
+	"go.uber.org/atomic"
+)
+
+var (
+	// We need to jankily expose the db for messageCreate
+	db      *DB
+	txReady = atomic.NewBool(false)
 )
 
 type DB struct {
-	radix         *iradix.Tree
-	dataChannelID string
-	txChannelID   string
+	radix *iradix.Tree
 }
 
 func setupDB(dg *discordgo.Session, guildID string) (*DB, error) {
+	defer txReady.Store(true)
+
 	channels, err := dg.GuildChannels(guildID)
 	if err != nil {
 		return nil, err
 	}
 
+	// Find existing channels
 	channelMap := map[string]*discordgo.Channel{
 		DataChannelName: nil,
 		TxChannelName:   nil,
@@ -30,6 +38,7 @@ func setupDB(dg *discordgo.Session, guildID string) (*DB, error) {
 		}
 	}
 
+	// Create missing channels
 	for name, channel := range channelMap {
 		if channel == nil {
 			create, err := dg.GuildChannelCreate(guildID, name, discordgo.ChannelTypeGuildText)
@@ -40,12 +49,21 @@ func setupDB(dg *discordgo.Session, guildID string) (*DB, error) {
 		}
 	}
 
-	channel := channelMap[TxChannelName]
+	DataChannelID = channelMap[DataChannelName].ID
+	TxChannelID = channelMap[TxChannelName].ID
+
 	db := DB{
-		radix:         iradix.New(),
-		dataChannelID: channelMap[DataChannelName].ID,
-		txChannelID:   channelMap[TxChannelName].ID,
+		radix: iradix.New(),
 	}
+	channel := channelMap[TxChannelName]
+
+	// We check for the lastPinTimestamp to see which TX to start from
+	// this is not necessary, but if we need to speed up DB setup we can
+	// compress multiple TXs into one message and re-pin to the new starting
+	// TX.
+	//
+	// If lastPinTimestamp is not found, we insert the root folder to
+	// initialize.
 	if channel.LastPinTimestamp != nil {
 		pinned, err := dg.ChannelMessagesPinned(channel.ID)
 		if err != nil {
@@ -66,18 +84,17 @@ func setupDB(dg *discordgo.Session, guildID string) (*DB, error) {
 				return nil, err
 			}
 
-			// Reverse
+			// Messages are in reverse order
 			for i, j := 0, len(batch)-1; i < j; i, j = i+1, j-1 {
 				batch[i], batch[j] = batch[j], batch[i]
 			}
 
-			messages = append(messages, batch...)
+			// Apply TX batch
+			applyMessageTxs(&db, batch)
 			if len(batch) != MaxDiscordMessageRequest {
 				break
 			}
 		}
-
-		applyMessageTxs(&db, messages)
 	} else {
 		tx := Tx{
 			Tx:   WriteTx,

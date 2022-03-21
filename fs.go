@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/bwmarrin/discordgo"
 	"github.com/darenliang/dsfs/fuse"
+	"go.uber.org/atomic"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -22,7 +23,7 @@ type Dsfs struct {
 
 type FileData struct {
 	lock    sync.RWMutex
-	syncing bool
+	syncing *atomic.Bool
 	data    []byte
 	dirty   bool
 	mtim    time.Time
@@ -30,6 +31,7 @@ type FileData struct {
 }
 
 func getDir(path string) string {
+	// Handle weirdness with Windows
 	return strings.ReplaceAll(filepath.Dir(path), "\\", "/")
 }
 
@@ -54,9 +56,10 @@ func (fs *Dsfs) Mknod(path string, mode uint32, dev uint64) int {
 	}
 
 	fs.open[path] = &FileData{
-		data: make([]byte, 0),
-		mtim: time.Now(),
-		ctim: time.Now(),
+		data:    make([]byte, 0),
+		syncing: atomic.NewBool(false),
+		mtim:    time.Now(),
+		ctim:    time.Now(),
 	}
 
 	return 0
@@ -92,7 +95,7 @@ func (fs *Dsfs) Mkdir(path string, mode uint32) int {
 	if len(b) > MaxDiscordFileSize {
 		return -fuse.EACCES
 	}
-	_, err := fs.dg.ChannelFileSend(fs.db.txChannelID, TxChannelName, bytes.NewReader(b))
+	_, err := fs.dg.ChannelFileSend(TxChannelID, TxChannelName, bytes.NewReader(b))
 	if err != nil {
 		return -fuse.EACCES
 	}
@@ -124,18 +127,26 @@ func (fs *Dsfs) Open(path string, flags int) (int, uint64) {
 	}
 
 	fs.open[path] = &FileData{
-		data: make([]byte, 0, tx.Stat.Size),
-		mtim: tx.Stat.Mtim,
-		ctim: tx.Stat.Ctim,
+		data:    make([]byte, 0, tx.Stat.Size),
+		syncing: atomic.NewBool(false),
+		mtim:    tx.Stat.Mtim,
+		ctim:    tx.Stat.Ctim,
 	}
 	fs.lock.Unlock()
 
+	// Load entire file in mem in the background.
+	// This solution is really hacky and isn't great and loading files
+	// incrementally is preferable.
+	//
+	// If memory is really constrained, it is better to save files in a folder
+	// other than the root folder, since some file explorers like to eagerly
+	// prob files for thumbnails, etc.
 	go func() {
 		fs.open[path].lock.Lock()
 		defer fs.open[path].lock.Unlock()
 		buffer := make([]byte, MaxDiscordFileSize)
 		for _, id := range tx.FileIDs {
-			n, err := getDataFile(fs.db.dataChannelID, id, buffer)
+			n, err := getDataFile(DataChannelID, id, buffer)
 			if err != nil {
 				fmt.Println("Network error with Discord", err)
 				return
@@ -178,7 +189,7 @@ func (fs *Dsfs) Unlink(path string) int {
 	if len(b) > MaxDiscordFileSize {
 		return -fuse.EACCES
 	}
-	_, err := fs.dg.ChannelFileSend(fs.db.txChannelID, TxChannelName, bytes.NewReader(b))
+	_, err := fs.dg.ChannelFileSend(TxChannelID, TxChannelName, bytes.NewReader(b))
 	if err != nil {
 		return -fuse.EACCES
 	}
@@ -203,6 +214,7 @@ func (fs *Dsfs) Rmdir(path string) int {
 		return -fuse.ENOTDIR
 	}
 
+	// Hacky way to find if a folder is empty or not. Not well tested.
 	it := fs.db.radix.Root().Iterator()
 	it.SeekPrefix(pathBytes)
 	for key, _, ok := it.Next(); ok; key, _, ok = it.Next() {
@@ -218,7 +230,7 @@ func (fs *Dsfs) Rmdir(path string) int {
 	if len(b) > MaxDiscordFileSize {
 		return -fuse.EACCES
 	}
-	_, err := fs.dg.ChannelFileSend(fs.db.txChannelID, TxChannelName, bytes.NewReader(b))
+	_, err := fs.dg.ChannelFileSend(TxChannelID, TxChannelName, bytes.NewReader(b))
 	if err != nil {
 		return -fuse.EACCES
 	}
@@ -254,11 +266,18 @@ func (fs *Dsfs) Rename(oldpath string, newpath string) int {
 	tx := val.(Tx)
 
 	if tx.Type == FolderType {
-		key, _, _ := fs.db.radix.Root().LongestPrefix(oldpathBytes)
-		fmt.Println("Compare", string(key), string(oldpathBytes))
-		if bytes.Compare(key, oldpathBytes) != 0 {
-			fs.lock.Unlock()
-			return -fuse.ENOTEMPTY
+		// The same hacky way used for Rmdir.
+		// It's pretty sad that renames won't work because paths are hardcoded.
+		//
+		// Looking for a better solution that would eliminate the need of
+		// hardcoded paths.
+		it := fs.db.radix.Root().Iterator()
+		it.SeekPrefix(oldpathBytes)
+		for key, _, ok := it.Next(); ok; key, _, ok = it.Next() {
+			if bytes.Compare(key, oldpathBytes) != 0 {
+				fs.lock.Unlock()
+				return -fuse.ENOTEMPTY
+			}
 		}
 	} else {
 		// Check mem for files
@@ -275,7 +294,7 @@ func (fs *Dsfs) Rename(oldpath string, newpath string) int {
 	if len(b) > MaxDiscordFileSize {
 		return -fuse.EACCES
 	}
-	_, err := fs.dg.ChannelFileSend(fs.db.txChannelID, TxChannelName, bytes.NewReader(b))
+	_, err := fs.dg.ChannelFileSend(TxChannelID, TxChannelName, bytes.NewReader(b))
 	if err != nil {
 		return -fuse.EACCES
 	}
@@ -285,7 +304,7 @@ func (fs *Dsfs) Rename(oldpath string, newpath string) int {
 	if len(b) > MaxDiscordFileSize {
 		return -fuse.EACCES
 	}
-	_, err = fs.dg.ChannelFileSend(fs.db.txChannelID, TxChannelName, bytes.NewReader(b))
+	_, err = fs.dg.ChannelFileSend(TxChannelID, TxChannelName, bytes.NewReader(b))
 	if err != nil {
 		return -fuse.EACCES
 	}
@@ -327,6 +346,7 @@ func (fs *Dsfs) Getattr(path string, stat *fuse.Stat_t, fh uint64) int {
 }
 
 func (fs *Dsfs) Truncate(path string, size int64, fh uint64) int {
+	// Please note that Truncate only truncates in mem!
 	fmt.Println("Truncate", path, size, fh)
 
 	fs.lock.Lock()
@@ -385,6 +405,7 @@ func (fs *Dsfs) Read(path string, buff []byte, ofst int64, fh uint64) int {
 }
 
 func (fs *Dsfs) Write(path string, buff []byte, ofst int64, fh uint64) int {
+	// Please note that Write only writes to mem!
 	fmt.Println("Write", path, len(buff), ofst, fh)
 
 	fs.lock.Lock()
@@ -412,6 +433,9 @@ func (fs *Dsfs) Write(path string, buff []byte, ofst int64, fh uint64) int {
 }
 
 func (fs *Dsfs) Release(path string, fh uint64) int {
+	// All open files are dumped to memory.
+	// When a file is closed and is "dirty" (aka modified), the entire file
+	// is flushed in the background.
 	fmt.Println("Release", path, fh)
 
 	fs.lock.Lock()
@@ -422,7 +446,7 @@ func (fs *Dsfs) Release(path string, fh uint64) int {
 		return -fuse.ENOENT
 	}
 	if !file.dirty {
-		// TODO: find a good way to evict stale files from cache
+		// TODO: find a good way to evict stale files from mem
 		// delete(fs.open, path)
 		fs.lock.Unlock()
 		return 0
@@ -443,22 +467,25 @@ func (fs *Dsfs) Release(path string, fh uint64) int {
 
 	go func() {
 		fmt.Printf("Uploading %s in the background", path)
-		if file.syncing {
+		// Do not attempt to run more than one write job at once for each path
+		if file.syncing.Load() {
 			return
 		}
 		file.lock.RLock()
-		file.syncing = true
+		file.syncing.Store(true)
 		file.dirty = false
+
 		defer file.lock.RUnlock()
-		defer func() { file.syncing = false }()
+		defer func() { file.syncing.Store(false) }()
+
+		// Dump mem data
 		cursor := 0
 		for cursor < len(file.data) {
-			fmt.Println("cursor", cursor)
 			end := cursor + MaxDiscordFileSize
 			if end > len(file.data) {
 				end = len(file.data)
 			}
-			msg, err := fs.dg.ChannelFileSend(fs.db.dataChannelID, DataChannelName, bytes.NewReader(file.data[cursor:end]))
+			msg, err := fs.dg.ChannelFileSend(DataChannelID, DataChannelName, bytes.NewReader(file.data[cursor:end]))
 			if err != nil {
 				return
 			}
@@ -470,14 +497,14 @@ func (fs *Dsfs) Release(path string, fh uint64) int {
 		if len(b) > MaxDiscordFileSize {
 			return
 		}
-		_, err := fs.dg.ChannelFileSend(fs.db.txChannelID, TxChannelName, bytes.NewReader(b))
+		_, err := fs.dg.ChannelFileSend(TxChannelID, TxChannelName, bytes.NewReader(b))
 		if err != nil {
 			return
 		}
 		fs.db.radix, _, _ = fs.db.radix.Insert([]byte(path), tx)
 	}()
 
-	// TODO: find a good way to evict stale files from cache
+	// TODO: find a good way to evict stale files from mem
 	// delete(fs.open, path)
 	return 0
 }
@@ -546,6 +573,9 @@ func (fs *Dsfs) Releasedir(path string, fh uint64) int {
 
 func (fs *Dsfs) Statfs(path string, stat *fuse.Statfs_t) int {
 	fmt.Println("Statfs", path)
+
+	// We are injecting some phony data here.
+	// None of this should matter.
 	stat.Bsize = 4096
 	stat.Frsize = stat.Bsize
 	stat.Blocks = 256 * 1024 * 1024

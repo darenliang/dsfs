@@ -86,8 +86,18 @@ func applyMessageTxs(db *DB, ms []*discordgo.Message) {
 }
 
 func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
-	if m.Author.ID == s.State.User.ID {
+	// Not ready to accept TXs
+	if !txReady.Load() {
 		return
 	}
-	fmt.Println(m.Content)
+
+	// Don't handle the bot's own TXs or listen to a non-TX channel
+	if m.Author.ID == s.State.User.ID && m.ChannelID != TxChannelID {
+		return
+	}
+
+	// There is potentially some issues when doing this
+	// In this current state, open files will not be affected
+	// by any TXs broadcasted by remote clients
+	applyMessageTxs(db, []*discordgo.Message{m.Message})
 }

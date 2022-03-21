@@ -6,6 +6,7 @@ require (
 	github.com/bwmarrin/discordgo v0.24.0
 	github.com/getlantern/systray v1.2.1
 	github.com/hashicorp/go-immutable-radix v1.3.1
+	go.uber.org/atomic v1.9.0
 )
 
 require (

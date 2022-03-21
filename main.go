@@ -23,12 +23,14 @@ func init() {
 }
 
 func main() {
+	// If DEBUG is set, expose pprof
 	if len(os.Getenv("DEBUG")) != 0 {
 		go func() {
-			fmt.Println("Pprof running on port 8000")
+			fmt.Println("pprof running on port 8000")
 			http.ListenAndServe(":8000", nil)
 		}()
 	}
+
 	dg, err := discordgo.New("Bot " + token)
 	if err != nil {
 		fmt.Println("error creating Discord session,", err)

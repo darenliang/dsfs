@@ -16,3 +16,8 @@ const (
 	FileType int = iota
 	FolderType
 )
+
+var (
+	DataChannelID string
+	TxChannelID   string
+)
