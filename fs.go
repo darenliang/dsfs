@@ -64,18 +64,18 @@ func (fs *Dsfs) Mknod(path string, mode uint32, dev uint64) int {
 
 func (fs *Dsfs) Mkdir(path string, mode uint32) int {
 	fmt.Println("Mkdir", path, mode)
-	fs.lock.Lock()
-	defer fs.lock.Unlock()
-
 	pathBytes := []byte(path)
 
+	fs.lock.Lock()
 	// Check parent in db
 	if _, ok := fs.db.radix.Get([]byte(getDir(path))); !ok {
+		fs.lock.Unlock()
 		return -fuse.ENOENT
 	}
 
 	// Check file in db
 	if _, ok := fs.db.radix.Get(pathBytes); ok {
+		fs.lock.Unlock()
 		return -fuse.EEXIST
 	}
 
@@ -85,6 +85,8 @@ func (fs *Dsfs) Mkdir(path string, mode uint32) int {
 		Path: path,
 		Type: FolderType,
 	}
+	fs.db.radix, _, _ = fs.db.radix.Insert(pathBytes, tx)
+	fs.lock.Unlock()
 
 	b, _ := json.Marshal(tx)
 	if len(b) > MaxDiscordFileSize {
@@ -94,13 +96,13 @@ func (fs *Dsfs) Mkdir(path string, mode uint32) int {
 	if err != nil {
 		return -fuse.EACCES
 	}
-	fs.db.radix, _, _ = fs.db.radix.Insert(pathBytes, tx)
 
 	return 0
 }
 
 func (fs *Dsfs) Open(path string, flags int) (int, uint64) {
 	fmt.Println("Open", path, flags)
+
 	fs.lock.Lock()
 
 	// Check open map
@@ -145,8 +147,8 @@ func (fs *Dsfs) Open(path string, flags int) (int, uint64) {
 
 func (fs *Dsfs) Unlink(path string) int {
 	fmt.Println("Unlink", path)
+
 	fs.lock.Lock()
-	defer fs.lock.Unlock()
 
 	pathBytes := []byte(path)
 	val, ok := fs.db.radix.Get(pathBytes)
@@ -154,14 +156,21 @@ func (fs *Dsfs) Unlink(path string) int {
 		// If only found in mem, just drop the file data
 		if _, ok := fs.open[path]; ok {
 			delete(fs.open, path)
+			fs.lock.Unlock()
 			return 0
 		}
+		fs.lock.Unlock()
 		return -fuse.ENOENT
 	}
 	tx := val.(Tx)
 	if tx.Type == FolderType {
+		fs.lock.Unlock()
 		return -fuse.EISDIR
 	}
+
+	delete(fs.open, path)
+	fs.db.radix, _, _ = fs.db.radix.Delete(pathBytes)
+	fs.lock.Unlock()
 
 	b, _ := json.Marshal(createDeleteTx(path))
 	if len(b) > MaxDiscordFileSize {
@@ -172,23 +181,23 @@ func (fs *Dsfs) Unlink(path string) int {
 		return -fuse.EACCES
 	}
 
-	delete(fs.open, path)
-	fs.db.radix, _, _ = fs.db.radix.Delete(pathBytes)
 	return 0
 }
 
 func (fs *Dsfs) Rmdir(path string) int {
 	fmt.Println("Rmdir", path)
+
 	fs.lock.Lock()
-	defer fs.lock.Unlock()
 
 	pathBytes := []byte(path)
 	val, ok := fs.db.radix.Get(pathBytes)
 	if !ok {
+		fs.lock.Unlock()
 		return -fuse.ENOENT
 	}
 	tx := val.(Tx)
 	if tx.Type != FolderType {
+		fs.lock.Unlock()
 		return -fuse.ENOTDIR
 	}
 
@@ -196,9 +205,12 @@ func (fs *Dsfs) Rmdir(path string) int {
 	it.SeekPrefix(pathBytes)
 	for key, _, ok := it.Next(); ok; key, _, ok = it.Next() {
 		if bytes.Compare(key, pathBytes) != 0 {
+			fs.lock.Unlock()
 			return -fuse.ENOTEMPTY
 		}
 	}
+	fs.db.radix, _, _ = fs.db.radix.Delete(pathBytes)
+	fs.lock.Unlock()
 
 	b, _ := json.Marshal(createDeleteTx(path))
 	if len(b) > MaxDiscordFileSize {
@@ -209,16 +221,16 @@ func (fs *Dsfs) Rmdir(path string) int {
 		return -fuse.EACCES
 	}
 
-	fs.db.radix, _, _ = fs.db.radix.Delete(pathBytes)
 	return 0
 }
 
 func (fs *Dsfs) Rename(oldpath string, newpath string) int {
 	fmt.Println("Rename", oldpath, newpath)
+
 	fs.lock.Lock()
-	defer fs.lock.Unlock()
 
 	if _, ok := fs.db.radix.Get([]byte(getDir(newpath))); !ok {
+		fs.lock.Unlock()
 		return -fuse.ENOENT
 	}
 
@@ -231,8 +243,10 @@ func (fs *Dsfs) Rename(oldpath string, newpath string) int {
 			tmp := fs.open[oldpath]
 			delete(fs.open, oldpath)
 			fs.open[newpath] = tmp
+			fs.lock.Unlock()
 			return 0
 		}
+		fs.lock.Unlock()
 		return -fuse.ENOENT
 	}
 	tx := val.(Tx)
@@ -241,6 +255,7 @@ func (fs *Dsfs) Rename(oldpath string, newpath string) int {
 		key, _, _ := fs.db.radix.Root().LongestPrefix(oldpathBytes)
 		fmt.Println("Compare", string(key), string(oldpathBytes))
 		if bytes.Compare(key, oldpathBytes) != 0 {
+			fs.lock.Unlock()
 			return -fuse.ENOTEMPTY
 		}
 	} else {
@@ -251,6 +266,7 @@ func (fs *Dsfs) Rename(oldpath string, newpath string) int {
 			fs.open[newpath] = tmp
 		}
 	}
+	fs.lock.Unlock()
 
 	tx.Path = newpath
 	b, _ := json.Marshal(tx)
@@ -278,6 +294,7 @@ func (fs *Dsfs) Rename(oldpath string, newpath string) int {
 
 func (fs *Dsfs) Getattr(path string, stat *fuse.Stat_t, fh uint64) int {
 	fmt.Println("Getattr", path, fh)
+
 	fs.lock.Lock()
 	defer fs.lock.Unlock()
 
@@ -309,6 +326,7 @@ func (fs *Dsfs) Getattr(path string, stat *fuse.Stat_t, fh uint64) int {
 
 func (fs *Dsfs) Truncate(path string, size int64, fh uint64) int {
 	fmt.Println("Truncate", path, size, fh)
+
 	fs.lock.Lock()
 
 	if _, ok := fs.open[path]; !ok {
@@ -337,6 +355,7 @@ func (fs *Dsfs) Truncate(path string, size int64, fh uint64) int {
 
 func (fs *Dsfs) Read(path string, buff []byte, ofst int64, fh uint64) int {
 	fmt.Println("Read", path, len(buff), ofst, fh)
+
 	fs.lock.Lock()
 
 	if _, ok := fs.open[path]; !ok {
@@ -365,6 +384,7 @@ func (fs *Dsfs) Read(path string, buff []byte, ofst int64, fh uint64) int {
 
 func (fs *Dsfs) Write(path string, buff []byte, ofst int64, fh uint64) int {
 	fmt.Println("Write", path, len(buff), ofst, fh)
+
 	fs.lock.Lock()
 
 	if _, ok := fs.open[path]; !ok {
@@ -391,6 +411,7 @@ func (fs *Dsfs) Write(path string, buff []byte, ofst int64, fh uint64) int {
 
 func (fs *Dsfs) Release(path string, fh uint64) int {
 	fmt.Println("Release", path, fh)
+
 	fs.lock.Lock()
 
 	file, ok := fs.open[path]
@@ -471,6 +492,7 @@ func (fs *Dsfs) Readdir(
 	fh uint64,
 ) int {
 	fmt.Println("Readdir", path, ofst, fh)
+
 	fs.lock.Lock()
 	defer fs.lock.Unlock()
 
