@@ -92,7 +92,11 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 	}
 
 	// Don't handle the bot's own TXs or listen to a non-TX channel
-	if m.Author.ID == s.State.User.ID && m.ChannelID != TxChannelID {
+	if m.Author.ID == s.State.User.ID {
+		return
+	}
+
+	if m.ChannelID != TxChannelID {
 		return
 	}
 
