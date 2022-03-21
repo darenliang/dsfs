@@ -510,6 +510,7 @@ func (fs *Dsfs) Release(path string, fh uint64) int {
 			return
 		}
 		fs.db.radix, _, _ = fs.db.radix.Insert([]byte(path), tx)
+		fmt.Println("Release done", path)
 	}()
 
 	// TODO: find a good way to evict stale files from mem
