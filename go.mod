@@ -5,6 +5,7 @@ go 1.17
 require (
 	github.com/bwmarrin/discordgo v0.24.0
 	github.com/getlantern/systray v1.2.1
+	github.com/hashicorp/go-immutable-radix v1.3.1
 )
 
 require (
@@ -15,9 +16,7 @@ require (
 	github.com/getlantern/hidden v0.0.0-20190325191715-f02dbb02be55 // indirect
 	github.com/getlantern/ops v0.0.0-20190325191751-d70cb0d6f85f // indirect
 	github.com/go-stack/stack v1.8.0 // indirect
-	github.com/google/uuid v1.3.0 // indirect
 	github.com/gorilla/websocket v1.4.2 // indirect
-	github.com/hashicorp/go-immutable-radix v1.3.1 // indirect
 	github.com/hashicorp/golang-lru v0.5.0 // indirect
 	github.com/oxtoacart/bpool v0.0.0-20190530202638-03653db5a59c // indirect
 	golang.org/x/crypto v0.0.0-20210421170649-83a5a9bb288b // indirect
