@@ -13,6 +13,11 @@ import (
 	"time"
 )
 
+func getDir(path string) string {
+	// Handle weirdness with Windows
+	return strings.ReplaceAll(filepath.Dir(path), "\\", "/")
+}
+
 type Dsfs struct {
 	fuse.FileSystemBase
 	lock sync.Mutex
@@ -30,9 +35,12 @@ type FileData struct {
 	ctim    time.Time
 }
 
-func getDir(path string) string {
-	// Handle weirdness with Windows
-	return strings.ReplaceAll(filepath.Dir(path), "\\", "/")
+func NewDsfs(dg *discordgo.Session, db *DB) *Dsfs {
+	dsfs := Dsfs{}
+	dsfs.dg = dg
+	dsfs.db = db
+	dsfs.open = make(map[string]*FileData)
+	return &dsfs
 }
 
 func (fs *Dsfs) Mknod(path string, mode uint32, dev uint64) int {
@@ -582,12 +590,4 @@ func (fs *Dsfs) Statfs(path string, stat *fuse.Statfs_t) int {
 	stat.Bfree = stat.Blocks
 	stat.Bavail = stat.Blocks
 	return 0
-}
-
-func NewDsfs(dg *discordgo.Session, db *DB) *Dsfs {
-	dsfs := Dsfs{}
-	dsfs.dg = dg
-	dsfs.db = db
-	dsfs.open = make(map[string]*FileData)
-	return &dsfs
 }
