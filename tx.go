@@ -24,17 +24,17 @@ type Tx struct {
 	Stat    Stat     `json:"stat"`
 }
 
-func getDataFile(channelID string, fileID string) ([]byte, error) {
+func getDataFile(channelID string, fileID string, buffer []byte) (int, error) {
 	resp, err := http.Get(fmt.Sprintf("https://cdn.discordapp.com/attachments/%s/%s/%s", channelID, fileID, DataChannelName))
 	if err != nil {
-		return nil, err
+		return 0, err
 	}
 	defer resp.Body.Close()
-	data, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
+	n, err := io.ReadFull(resp.Body, buffer)
+	if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
+		return 0, err
 	}
-	return data, nil
+	return n, nil
 }
 
 func createDeleteTx(path string) Tx {

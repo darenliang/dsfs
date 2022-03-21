@@ -124,7 +124,7 @@ func (fs *Dsfs) Open(path string, flags int) (int, uint64) {
 	}
 
 	fs.open[path] = &FileData{
-		data: make([]byte, 0),
+		data: make([]byte, 0, tx.Stat.Size),
 		mtim: tx.Stat.Mtim,
 		ctim: tx.Stat.Ctim,
 	}
@@ -133,12 +133,14 @@ func (fs *Dsfs) Open(path string, flags int) (int, uint64) {
 	go func() {
 		fs.open[path].lock.Lock()
 		defer fs.open[path].lock.Unlock()
+		buffer := make([]byte, MaxDiscordFileSize)
 		for _, id := range tx.FileIDs {
-			b, err := getDataFile(fs.db.dataChannelID, id)
+			n, err := getDataFile(fs.db.dataChannelID, id, buffer)
 			if err != nil {
+				fmt.Println("Network error with Discord", err)
 				return
 			}
-			fs.open[path].data = append(fs.open[path].data, b...)
+			fs.open[path].data = append(fs.open[path].data, buffer[:n]...)
 		}
 	}()
 

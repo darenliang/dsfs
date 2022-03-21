@@ -6,6 +6,9 @@ import (
 	"github.com/bwmarrin/discordgo"
 	"github.com/darenliang/dsfs/fuse"
 	"github.com/getlantern/systray"
+	"net/http"
+	_ "net/http/pprof"
+	"os"
 )
 
 var (
@@ -20,6 +23,12 @@ func init() {
 }
 
 func main() {
+	if len(os.Getenv("DEBUG")) != 0 {
+		go func() {
+			fmt.Println("Pprof running on port 8000")
+			http.ListenAndServe(":8000", nil)
+		}()
+	}
 	dg, err := discordgo.New("Bot " + token)
 	if err != nil {
 		fmt.Println("error creating Discord session,", err)
