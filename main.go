@@ -27,7 +27,7 @@ func main() {
 	if len(os.Getenv("DEBUG")) != 0 {
 		go func() {
 			fmt.Println("pprof running on port 8000")
-			http.ListenAndServe(":8000", nil)
+			_ = http.ListenAndServe(":8000", nil)
 		}()
 	}
 

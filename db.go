@@ -74,7 +74,7 @@ func setupDB(dg *discordgo.Session, guildID string) (*DB, error) {
 		}
 
 		messages := []*discordgo.Message{pinned[0]}
-		for true {
+		for {
 			batch, err := dg.ChannelMessages(
 				channel.ID,
 				MaxDiscordMessageRequest,

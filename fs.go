@@ -20,19 +20,19 @@ func getDir(path string) string {
 
 type Dsfs struct {
 	fuse.FileSystemBase
-	lock sync.Mutex
 	dg   *discordgo.Session
 	db   *DB
 	open map[string]*FileData
+	lock sync.Mutex
 }
 
 type FileData struct {
-	lock    sync.RWMutex
-	syncing *atomic.Bool
-	data    []byte
-	dirty   bool
 	mtim    time.Time
 	ctim    time.Time
+	syncing *atomic.Bool
+	data    []byte
+	lock    sync.RWMutex
+	dirty   bool
 }
 
 func NewDsfs(dg *discordgo.Session, db *DB) *Dsfs {
@@ -259,7 +259,7 @@ func (fs *Dsfs) Rmdir(path string) int {
 	it := fs.db.radix.Root().Iterator()
 	it.SeekPrefix(pathBytes)
 	for key, _, ok := it.Next(); ok; key, _, ok = it.Next() {
-		if bytes.Compare(key, pathBytes) != 0 {
+		if !bytes.Equal(key, pathBytes) {
 			fs.lock.Unlock()
 			return -fuse.ENOTEMPTY
 		}
@@ -294,10 +294,9 @@ func (fs *Dsfs) Rename(oldpath string, newpath string) int {
 	val, ok := fs.db.radix.Get(oldpathBytes)
 	if !ok {
 		// If only found in mem, just rename the file directly
-		if val, ok = fs.open[oldpath]; ok {
-			tmp := fs.open[oldpath]
+		if val, ok := fs.open[oldpath]; ok {
+			fs.open[newpath] = val
 			delete(fs.open, oldpath)
-			fs.open[newpath] = tmp
 			fs.lock.Unlock()
 			return 0
 		}
@@ -315,17 +314,16 @@ func (fs *Dsfs) Rename(oldpath string, newpath string) int {
 		it := fs.db.radix.Root().Iterator()
 		it.SeekPrefix(oldpathBytes)
 		for key, _, ok := it.Next(); ok; key, _, ok = it.Next() {
-			if bytes.Compare(key, oldpathBytes) != 0 {
+			if !bytes.Equal(key, oldpathBytes) {
 				fs.lock.Unlock()
 				return -fuse.ENOTEMPTY
 			}
 		}
 	} else {
 		// Check mem for files
-		if val, ok = fs.open[oldpath]; ok {
-			tmp := fs.open[oldpath]
+		if val, ok := fs.open[oldpath]; ok {
+			fs.open[newpath] = val
 			delete(fs.open, oldpath)
-			fs.open[newpath] = tmp
 		}
 	}
 	fs.lock.Unlock()

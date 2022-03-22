@@ -11,17 +11,17 @@ import (
 )
 
 type Stat struct {
-	Size int64     `json:"size"`
 	Mtim time.Time `json:"mtim"`
 	Ctim time.Time `json:"ctim"`
+	Size int64     `json:"size"`
 }
 
 type Tx struct {
-	Tx      int      `json:"tx"`
-	Path    string   `json:"path"`
-	Type    int      `json:"file"`
-	FileIDs []string `json:"ids"`
 	Stat    Stat     `json:"stat"`
+	Path    string   `json:"path"`
+	FileIDs []string `json:"ids"`
+	Tx      int      `json:"tx"`
+	Type    int      `json:"file"`
 }
 
 func getDataFile(channelID string, fileID string, buffer []byte) (int, error) {
