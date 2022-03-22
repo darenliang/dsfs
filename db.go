@@ -52,7 +52,7 @@ func setupDB(dg *discordgo.Session, guildID string) (*DB, error) {
 	DataChannelID = channelMap[DataChannelName].ID
 	TxChannelID = channelMap[TxChannelName].ID
 
-	db := DB{
+	db = &DB{
 		radix: iradix.New(),
 	}
 	channel := channelMap[TxChannelName]
@@ -95,7 +95,7 @@ func setupDB(dg *discordgo.Session, guildID string) (*DB, error) {
 			}
 		}
 
-		applyMessageTxs(&db, messages)
+		applyMessageTxs(db, messages)
 	} else {
 		tx := Tx{
 			Tx:   WriteTx,
@@ -118,5 +118,5 @@ func setupDB(dg *discordgo.Session, guildID string) (*DB, error) {
 		}
 	}
 
-	return &db, nil
+	return db, nil
 }
