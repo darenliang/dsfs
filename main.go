@@ -14,11 +14,13 @@ import (
 var (
 	token   string
 	guildID string
+	mount   string
 )
 
 func init() {
 	flag.StringVar(&token, "t", "", "Bot Token")
 	flag.StringVar(&guildID, "s", "", "Guild ID")
+	flag.StringVar(&mount, "m", "", "Mount point for Linux/macOS")
 	flag.Parse()
 }
 
@@ -59,5 +61,5 @@ func main() {
 	dsfs := NewDsfs(dg, db)
 	host := fuse.NewFileSystemHost(dsfs)
 	host.SetCapReaddirPlus(true)
-	host.Mount("", nil)
+	host.Mount(mount, nil)
 }

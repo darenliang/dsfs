@@ -26,7 +26,12 @@ opened and not written to will not be flushed when closed.
 
 ### Neat features
 
+* Cross-platform support for
+  Windows ([WinFsp](https://github.com/billziss-gh/winfsp)), Linux (
+  libfuse-dev) and macOS ([FUSE for macOS](https://osxfuse.github.io)).
 * A full history of the filesystem is available by replaying transactions.
+* Support for simultaneous clients where files and folders are synchronized in
+  realtime.
 * There is technically no file storage limits.
 * Transactions are stored in memory via a radix tree for fast path lookups.
 
@@ -35,6 +40,7 @@ opened and not written to will not be flushed when closed.
 * Some file explorers probe files by opening them to look for thumbnails, etc.
   This can cause files to load into memory. This can be prevented by moving
   large files into their own individual folders.
+* There is no synchronization of file writes for already opened files.
 * Renaming folders is somewhat bugged. Since paths are hard coded in
   transactions, there is currently no good way to efficiently rename the path
   of child files/folders. We can experiment with path IDs, but it will greatly
