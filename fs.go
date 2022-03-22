@@ -135,7 +135,7 @@ func (fs *Dsfs) Open(path string, flags int) (int, uint64) {
 	}
 
 	fs.open[path] = &FileData{
-		data:    make([]byte, 0, tx.Stat.Size),
+		data:    make([]byte, tx.Stat.Size),
 		syncing: atomic.NewBool(false),
 		mtim:    tx.Stat.Mtim,
 		ctim:    tx.Stat.Ctim,
@@ -151,15 +151,48 @@ func (fs *Dsfs) Open(path string, flags int) (int, uint64) {
 	// prob files for thumbnails, etc.
 	go func() {
 		buffer := make([]byte, MaxDiscordFileSize)
-		for _, id := range tx.FileIDs {
+
+		dlID := func(id string, ofst int) error {
 			n, err := getDataFile(DataChannelID, id, buffer)
 			if err != nil {
 				fmt.Println("Network error with Discord", err)
-				return
+				return err
 			}
 			fs.open[path].lock.Lock()
-			fs.open[path].data = append(fs.open[path].data, buffer[:n]...)
+			copy(fs.open[path].data[ofst:ofst+n], buffer[:n])
 			fs.open[path].lock.Unlock()
+			return nil
+		}
+
+		// Quick check to see if file parts exist
+		if len(tx.FileIDs) == 0 {
+			return
+		}
+
+		// Download first piece
+		err := dlID(tx.FileIDs[0], 0)
+		if err != nil {
+			return
+		}
+
+		// Quick check to see if there is only one file part
+		if len(tx.FileIDs) == 1 {
+			return
+		}
+
+		// Download last piece to simulate torrent streaming behavior
+		lastIdx := len(tx.FileIDs) - 1
+		err = dlID(tx.FileIDs[lastIdx], lastIdx*MaxDiscordFileSize)
+		if err != nil {
+			return
+		}
+
+		// Download rest in order
+		for i := 1; i < lastIdx; i++ {
+			err = dlID(tx.FileIDs[i], i*MaxDiscordFileSize)
+			if err != nil {
+				return
+			}
 		}
 	}()
 
