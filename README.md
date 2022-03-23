@@ -91,7 +91,7 @@ only modified chunks are downloaded and patched.
 
 Since the filesystem is append-only, each historic state of the filesystem is
 saved and can be recovered in the future by replaying transactions up to a
-specific date.
+specific date and time.
 
 ## Areas of improvement
 
