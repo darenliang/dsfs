@@ -1,5 +1,3 @@
-
-
 # dsfs
 
 An experiment with Filesystem in USErspace (FUSE) with Discord attachments.
@@ -106,3 +104,8 @@ ratelimits.
 A lot of permissions and attributes are not implemented. In most systems, the
 size attribute is all that matters. Some attributes such as access times is
 unfeasible to implement as the attribute would be stale most of the time.
+
+Startup times can get long when there is a long transaction history. To speed
+things up it is possible to create periodic snapshots where multiple transactions
+are into one transaction message. Each message can hold 8MB of transaction data
+which is usually worth terabytes of data.
