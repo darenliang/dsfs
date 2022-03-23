@@ -520,6 +520,7 @@ func (fs *Dsfs) Release(path string, fh uint64) int {
 		fmt.Printf("Uploading %s in the background\n", path)
 		file.syncing.Store(true)
 		defer file.syncing.Store(false)
+		defer func() { file.dirty = false }()
 
 		up := func(idx int, fileID string, checksum string) error {
 			file.lock.RLock()
