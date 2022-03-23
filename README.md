@@ -93,8 +93,8 @@ saved and can be recovered in the future by replaying transactions up to a
 specific date and time.
 
 Startup times can get long when there is a long transaction history. To speed
-startup times multiple transactions are compacted into one message. Transaction
-order is still preserved and if no more transactions can fit in a messages, the
+startup times multiple transactions can be compacted into one message. Transaction
+order is still preserved and if no more transactions can fit in a message, the
 transactions are compacted into the next message and so on.
 
 ## Areas of improvement

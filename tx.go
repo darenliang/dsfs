@@ -95,8 +95,10 @@ func applyMessageTxs(db *DB, ms []*discordgo.Message, buffer *bytes.Buffer, live
 			}
 
 			// Write to buffer
-			buffer.WriteString(scanner.Text())
-			buffer.WriteByte('\n')
+			if buffer != nil {
+				buffer.WriteString(line)
+				buffer.WriteByte('\n')
+			}
 		}
 
 		resp.Body.Close()

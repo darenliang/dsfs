@@ -59,7 +59,6 @@ func setupDB(dg *discordgo.Session, guildID string) (*DB, error) {
 
 	txBuffer := &bytes.Buffer{}
 	var pinnedMsg *discordgo.Message
-	compactTx := false
 
 	// We check for the lastPinTimestamp to see which TX to start from
 	// this is not necessary, but if we need to speed up DB setup we can
@@ -93,9 +92,6 @@ func setupDB(dg *discordgo.Session, guildID string) (*DB, error) {
 				break
 			}
 
-			// Mark that we want to compact all transactions
-			compactTx = true
-
 			// Messages are in reverse order
 			for i, j := 0, len(batch)-1; i < j; i, j = i+1, j-1 {
 				batch[i], batch[j] = batch[j], batch[i]
@@ -107,7 +103,11 @@ func setupDB(dg *discordgo.Session, guildID string) (*DB, error) {
 			}
 		}
 
-		applyMessageTxs(db, messages, txBuffer, false)
+		if compact {
+			applyMessageTxs(db, messages, txBuffer, false)
+		} else {
+			applyMessageTxs(db, messages, nil, false)
+		}
 	} else {
 		tx := Tx{
 			Tx:   WriteTx,
@@ -130,8 +130,8 @@ func setupDB(dg *discordgo.Session, guildID string) (*DB, error) {
 		}
 	}
 
-	// Return early of no compaction is required
-	if !compactTx {
+	// Return early if compaction is not needed
+	if !compact {
 		return db, nil
 	}
 

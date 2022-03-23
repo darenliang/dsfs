@@ -15,6 +15,7 @@ var (
 	token   string
 	guildID string
 	mount   string
+	compact bool
 	// We need to jankily expose the db and dsfs for messageCreate
 	db   *DB
 	dsfs *Dsfs
@@ -24,6 +25,7 @@ func init() {
 	flag.StringVar(&token, "t", "", "Bot Token")
 	flag.StringVar(&guildID, "s", "", "Guild ID")
 	flag.StringVar(&mount, "m", "", "Mount point for Linux/macOS")
+	flag.BoolVar(&compact, "c", false, "Compact transactions")
 	flag.Parse()
 }
 

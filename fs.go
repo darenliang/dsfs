@@ -332,28 +332,35 @@ func (fs *Dsfs) Rename(oldpath string, newpath string) int {
 	fs.lock.Unlock()
 
 	tx.Path = newpath
-	b, _ := json.Marshal(tx)
-	if len(b) > MaxDiscordFileSize {
+	writeTxBytes, _ := json.Marshal(tx)
+	if len(writeTxBytes) > MaxDiscordFileSize {
 		return -fuse.EACCES
 	}
-	_, err := fs.dg.ChannelFileSend(TxChannelID, TxChannelName, bytes.NewReader(b))
-	if err != nil {
+	deleteTxBytes, _ := json.Marshal(createDeleteTx(oldpath))
+	if len(deleteTxBytes) > MaxDiscordFileSize {
 		return -fuse.EACCES
 	}
 
+	if len(writeTxBytes)+len(deleteTxBytes) > MaxDiscordFileSize {
+		_, err := fs.dg.ChannelFileSend(TxChannelID, TxChannelName, bytes.NewReader(writeTxBytes))
+		if err != nil {
+			return -fuse.EACCES
+		}
+		_, err = fs.dg.ChannelFileSend(TxChannelID, TxChannelName, bytes.NewReader(deleteTxBytes))
+		if err != nil {
+			return -fuse.EACCES
+		}
+	} else {
+		_, err := fs.dg.ChannelFileSend(
+			TxChannelID, TxChannelName,
+			bytes.NewReader(append(append(writeTxBytes, '\n'), deleteTxBytes...)),
+		)
+		if err != nil {
+			return -fuse.EACCES
+		}
+	}
 	fs.lock.Lock()
 	fs.db.radix, _, _ = fs.db.radix.Insert(newpathBytes, tx)
-	fs.lock.Unlock()
-
-	b, _ = json.Marshal(createDeleteTx(oldpath))
-	if len(b) > MaxDiscordFileSize {
-		return -fuse.EACCES
-	}
-	_, err = fs.dg.ChannelFileSend(TxChannelID, TxChannelName, bytes.NewReader(b))
-	if err != nil {
-		return -fuse.EACCES
-	}
-	fs.lock.Lock()
 	fs.db.radix, _, _ = fs.db.radix.Delete(oldpathBytes)
 	fs.lock.Unlock()
 
@@ -687,7 +694,7 @@ func (fs *Dsfs) ApplyLiveTx(pathBytes []byte, tx Tx) error {
 	fmt.Println("ApplyLiveTx", tx.Path)
 	fs.lock.Lock()
 
-	db.radix, _, _ = db.radix.Insert(pathBytes, tx)
+	fs.db.radix, _, _ = fs.db.radix.Insert(pathBytes, tx)
 	file, ok := fs.open[tx.Path]
 	if !ok {
 		fs.lock.Unlock()
