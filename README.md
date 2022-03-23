@@ -51,7 +51,8 @@ Tx format:
 }
 ```
 
-Some transactions use a combination of the write and delete transactions (e.g. rename).
+Some transactions use a combination of the write and delete transactions (e.g.
+rename).
 
 ### Walkthrough
 
@@ -91,6 +92,11 @@ Since the filesystem is append-only, each historic state of the filesystem is
 saved and can be recovered in the future by replaying transactions up to a
 specific date and time.
 
+Startup times can get long when there is a long transaction history. To speed
+startup times multiple transactions are compacted into one message. Transaction
+order is still preserved and if no more transactions can fit in a messages, the
+transactions are compacted into the next message and so on.
+
 ## Areas of improvement
 
 Renaming folders is horribly inefficient as it involves renaming all children.
@@ -104,8 +110,3 @@ ratelimits.
 A lot of permissions and attributes are not implemented. In most systems, the
 size attribute is all that matters. Some attributes such as access times is
 unfeasible to implement as the attribute would be stale most of the time.
-
-Startup times can get long when there is a long transaction history. To speed
-things up it is possible to create periodic snapshots where multiple transactions
-are put into one transaction message. Each message can hold 8MB of transaction data
-which can manage upwards of terabytes of data.

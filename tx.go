@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"github.com/bwmarrin/discordgo"
@@ -38,7 +39,7 @@ func createDeleteTx(path string) Tx {
 	return Tx{Tx: DeleteTx, Path: path}
 }
 
-func applyMessageTxs(db *DB, ms []*discordgo.Message, live bool) {
+func applyMessageTxs(db *DB, ms []*discordgo.Message, buffer *bytes.Buffer, live bool) {
 	fmt.Printf("Applying %d messages with TXs\n", len(ms))
 	for _, m := range ms {
 		if len(m.Attachments) == 0 {
@@ -92,6 +93,10 @@ func applyMessageTxs(db *DB, ms []*discordgo.Message, live bool) {
 				fmt.Printf("found unknown tx type %d\n, skipping tx", tx.Tx)
 				continue
 			}
+
+			// Write to buffer
+			buffer.WriteString(scanner.Text())
+			buffer.WriteByte('\n')
 		}
 
 		resp.Body.Close()
@@ -117,5 +122,5 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 	// There is potentially some issues when doing this
 	// In this current state, open files will not be affected
 	// by any TXs broadcasted by remote clients
-	applyMessageTxs(db, []*discordgo.Message{m.Message}, true)
+	applyMessageTxs(db, []*discordgo.Message{m.Message}, nil, true)
 }

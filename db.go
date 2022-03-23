@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"github.com/bwmarrin/discordgo"
 	"github.com/hashicorp/go-immutable-radix"
 	"go.uber.org/atomic"
+	"io"
 )
 
 var (
@@ -55,6 +57,10 @@ func setupDB(dg *discordgo.Session, guildID string) (*DB, error) {
 	}
 	channel := channelMap[TxChannelName]
 
+	txBuffer := &bytes.Buffer{}
+	var pinnedMsg *discordgo.Message
+	compactTx := false
+
 	// We check for the lastPinTimestamp to see which TX to start from
 	// this is not necessary, but if we need to speed up DB setup we can
 	// compress multiple TXs into one message and re-pin to the new starting
@@ -63,15 +69,17 @@ func setupDB(dg *discordgo.Session, guildID string) (*DB, error) {
 	// If lastPinTimestamp is not found, we insert the root folder to
 	// initialize.
 	if channel.LastPinTimestamp != nil {
-		pinned, err := dg.ChannelMessagesPinned(channel.ID)
+		pinnedMsgs, err := dg.ChannelMessagesPinned(channel.ID)
 		if err != nil {
 			return nil, err
 		}
-		if len(pinned) == 0 {
+		if len(pinnedMsgs) == 0 {
 			return nil, errors.New("pin timestamp found but no pins were found, very weird")
 		}
 
-		messages := []*discordgo.Message{pinned[0]}
+		// Get the latest pinned message
+		pinnedMsg = pinnedMsgs[len(pinnedMsgs)-1]
+		messages := []*discordgo.Message{pinnedMsg}
 		for {
 			batch, err := dg.ChannelMessages(
 				channel.ID,
@@ -81,19 +89,25 @@ func setupDB(dg *discordgo.Session, guildID string) (*DB, error) {
 			if err != nil {
 				return nil, err
 			}
+			if len(batch) == 0 {
+				break
+			}
+
+			// Mark that we want to compact all transactions
+			compactTx = true
 
 			// Messages are in reverse order
 			for i, j := 0, len(batch)-1; i < j; i, j = i+1, j-1 {
 				batch[i], batch[j] = batch[j], batch[i]
 			}
-
 			messages = append(messages, batch...)
+
 			if len(batch) != MaxDiscordMessageRequest {
 				break
 			}
 		}
 
-		applyMessageTxs(db, messages, false)
+		applyMessageTxs(db, messages, txBuffer, false)
 	} else {
 		tx := Tx{
 			Tx:   WriteTx,
@@ -102,7 +116,7 @@ func setupDB(dg *discordgo.Session, guildID string) (*DB, error) {
 		}
 		db.radix, _, _ = db.radix.Insert([]byte("/"), tx)
 		b, _ := json.Marshal(tx)
-		msg, err := dg.ChannelFileSend(
+		pinnedMsg, err = dg.ChannelFileSend(
 			channel.ID,
 			TxChannelName,
 			bytes.NewReader(b),
@@ -110,9 +124,66 @@ func setupDB(dg *discordgo.Session, guildID string) (*DB, error) {
 		if err != nil {
 			return nil, err
 		}
-		err = dg.ChannelMessagePin(channel.ID, msg.ID)
+		err = dg.ChannelMessagePin(channel.ID, pinnedMsg.ID)
 		if err != nil {
 			return nil, err
+		}
+	}
+
+	// Return early of no compaction is required
+	if !compactTx {
+		return db, nil
+	}
+
+	messageBuffer := make([]byte, 0, MaxDiscordFileSize)
+	var firstMsg *discordgo.Message
+	for {
+		b, err := txBuffer.ReadBytes('\n')
+		if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
+			fmt.Println("failed to read message buffer", err)
+			return db, nil
+		}
+		if err != nil || len(b) == 0 {
+			break
+		}
+		if len(messageBuffer)+len(b) > MaxDiscordFileSize {
+			msg, err := dg.ChannelFileSend(TxChannelID, TxChannelName, bytes.NewReader(messageBuffer))
+			if err != nil {
+				fmt.Println("aborting transaction compaction", err)
+				return db, nil
+			}
+			if firstMsg == nil {
+				firstMsg = msg
+			}
+			// Keep underlying allocated memory
+			messageBuffer = messageBuffer[:0]
+		} else {
+			messageBuffer = append(messageBuffer, b...)
+		}
+	}
+
+	// Check if messageBuffer has outstanding transactions
+	if len(messageBuffer) != 0 {
+		msg, err := dg.ChannelFileSend(TxChannelID, TxChannelName, bytes.NewReader(messageBuffer))
+		if err != nil {
+			fmt.Println("aborting transaction compaction", err)
+			return db, nil
+		}
+		if firstMsg == nil {
+			firstMsg = msg
+		}
+	}
+
+	if firstMsg != nil {
+		err := dg.ChannelMessagePin(TxChannelID, firstMsg.ID)
+		if err != nil {
+			fmt.Println("failed to pin new transaction start point")
+			return db, nil
+		}
+		err = dg.ChannelMessageUnpin(TxChannelID, pinnedMsg.ID)
+		if err != nil {
+			fmt.Println("failed to unpin old transaction start point, please manually unpin old pinned messages")
+			return db, nil
 		}
 	}
 
