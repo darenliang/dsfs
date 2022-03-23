@@ -15,6 +15,9 @@ var (
 	token   string
 	guildID string
 	mount   string
+	// We need to jankily expose the db and dsfs for messageCreate
+	db   *DB
+	dsfs *Dsfs
 )
 
 func init() {
@@ -48,7 +51,7 @@ func main() {
 		return
 	}
 
-	db, err := setupDB(dg, guildID)
+	db, err = setupDB(dg, guildID)
 	if err != nil {
 		fmt.Println(err)
 		return
@@ -58,7 +61,7 @@ func main() {
 		systray.Run(onReady, onExit)
 	}()
 
-	dsfs := NewDsfs(dg, db)
+	dsfs = NewDsfs(dg, db)
 	host := fuse.NewFileSystemHost(dsfs)
 	host.SetCapReaddirPlus(true)
 	host.Mount(mount, nil)

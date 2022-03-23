@@ -10,18 +10,15 @@ import (
 	"time"
 )
 
-type Stat struct {
-	Mtim time.Time `json:"mtim"`
-	Ctim time.Time `json:"ctim"`
-	Size int64     `json:"size"`
-}
-
 type Tx struct {
-	Stat    Stat     `json:"stat"`
-	Path    string   `json:"path"`
-	FileIDs []string `json:"ids"`
-	Tx      int      `json:"tx"`
-	Type    int      `json:"file"`
+	Ctim      time.Time `json:"ctim"`
+	Mtim      time.Time `json:"mtim"`
+	Path      string    `json:"path"`
+	FileIDs   []string  `json:"ids"`
+	Checksums []string  `json:"sums"`
+	Tx        int       `json:"tx"`
+	Type      int       `json:"type"`
+	Size      int64     `json:"size"`
 }
 
 func getDataFile(channelID string, fileID string, buffer []byte) (int, error) {
@@ -41,7 +38,7 @@ func createDeleteTx(path string) Tx {
 	return Tx{Tx: DeleteTx, Path: path}
 }
 
-func applyMessageTxs(db *DB, ms []*discordgo.Message) {
+func applyMessageTxs(db *DB, ms []*discordgo.Message, live bool) {
 	fmt.Printf("Applying %d messages with TXs\n", len(ms))
 	for _, m := range ms {
 		if len(m.Attachments) == 0 {
@@ -67,13 +64,30 @@ func applyMessageTxs(db *DB, ms []*discordgo.Message) {
 				fmt.Printf("%s, skipping tx\n", err)
 				continue
 			}
+
+			pathBytes := []byte(tx.Path)
+
 			switch tx.Tx {
 			case WriteTx:
 				fmt.Println("Write", tx.Path)
-				db.radix, _, _ = db.radix.Insert([]byte(tx.Path), tx)
+				if live {
+					err := dsfs.ApplyLiveTx(pathBytes, tx)
+					if err != nil {
+						fmt.Println("failed to apply live tx", err)
+					}
+				} else {
+					db.radix, _, _ = db.radix.Insert(pathBytes, tx)
+				}
 			case DeleteTx:
 				fmt.Println("Delete", tx.Path)
-				db.radix, _, _ = db.radix.Delete([]byte(tx.Path))
+				if live {
+					dsfs.lock.Lock()
+					db.radix, _, _ = db.radix.Delete(pathBytes)
+					delete(dsfs.open, tx.Path)
+					dsfs.lock.Unlock()
+				} else {
+					db.radix, _, _ = db.radix.Delete(pathBytes)
+				}
 			default:
 				fmt.Printf("found unknown tx type %d\n, skipping tx", tx.Tx)
 				continue
@@ -103,5 +117,5 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 	// There is potentially some issues when doing this
 	// In this current state, open files will not be affected
 	// by any TXs broadcasted by remote clients
-	applyMessageTxs(db, []*discordgo.Message{m.Message})
+	applyMessageTxs(db, []*discordgo.Message{m.Message}, true)
 }

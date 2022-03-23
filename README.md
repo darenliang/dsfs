@@ -2,48 +2,105 @@
 
 An experiment with Filesystem in USErspace (FUSE) with Discord attachments.
 
-> :warning: **Use at your own risk!** This is an unfinished project and only for research or recreational purposes only.
+> :warning: **Use at your own risk!** This is an unfinished project and only
+> for research or recreational purposes only.
 
-### Introduction
+## Introduction
 
 Files are backed on Discord with a very primitive append-only filesystem.
 
-There are two transaction types:
+This is considered pre-alpha software and there will be bugs pertaining to
+synchronization and functionality.
 
-* WriteTx: Writes a file or folder
-* DeleteTx: Deletes a file or folder
+## How it works
 
-Some operations are implemented (sometimes efficiently) with combinations of
-the two transaction types.
+### Format
 
-Opening a file will cache the entire file in memory. This is to greatly improve
-the read and write latency at the cost of memory usage and long initial opening
-times. Preferably, files should be cached on demand but this can be
-surprisingly difficult to implement.
+There are two channels:
 
-Writes are buffered and not flushed until the file is closed. Files that are
-opened and not written to will not be flushed when closed.
+* \#tx: stores transaction data
+* \#data: stores file data in chunks
 
-### Neat features
+Tx format:
 
-* Cross-platform support for
-  Windows ([WinFsp](https://github.com/billziss-gh/winfsp)), Linux (
-  libfuse-dev) and macOS ([FUSE for macOS](https://osxfuse.github.io)).
-* A full history of the filesystem is available by replaying transactions.
-* Support for simultaneous clients where files and folders are synchronized in
-  realtime.
-* There is technically no file storage limits.
-* Transactions are stored in memory via a radix tree for fast path lookups.
+* tx: 0 for write, 1 for delete
+* type: 0 for file, 1 for folder
+* mtim: modification time
+* ctim: creation time
 
-### Limitations
+```json
+{
+  "tx": 0,
+  "type": 0,
+  "path": "/test.mp4",
+  "ids": [
+    "956040610224148480",
+    "956040626284146698",
+    "956040643749224478",
+    "..."
+  ],
+  "sums": [
+    "Y9Whjuk_kbopDYx7cdSHXrzApvk=",
+    "sxFp01p0Q52hF-q8LWGi1DoXX-M=",
+    "7PljyMpvTDE-cfaZtm532OTwG7U=",
+    "..."
+  ],
+  "mtim": "2022-03-22T23:01:08.3596736-04:00",
+  "ctim": "2022-03-22T23:01:07.9266501-04:00",
+  "size": 348437445
+}
+```
 
-* Some file explorers probe files by opening them to look for thumbnails, etc.
-  This can cause files to load into memory. This can be prevented by moving
-  large files into their own individual folders.
-* There is no synchronization of file writes for already opened files.
-* Renaming folders is somewhat bugged. Since paths are hard coded in
-  transactions, there is currently no good way to efficiently rename the path
-  of child files/folders. We can experiment with path IDs, but it will greatly
-  increase the complexity of the data structures.
-* Some file attributes/modes are not implemented as it would be very complex to
-  handle. This is an area that can be improved in the future.
+Some transactions use a combination of the two transactions (e.g. rename).
+
+### Walkthrough
+
+On startup, all transactions are downloaded from the #tx channel and applied in
+sequential order in a radix tree structure.
+
+Radix trees have fast prefix lookup which is beneficial for querying file and
+folder paths.
+
+When a folder is opened, the path is queried in the radix tree and the
+immediate children (files and folders) are listed along with basic metadata
+such as size, modification/creation times, etc.
+
+Opening a file immediately starts a background process that will load the file
+into memory. The first and last pieces (same behavior as BitTorrent) are
+downloaded first so that certain applications are able to preview the file.
+
+Reading the file will incur almost no performance penalty as the file is fully
+buffered in memory. In the future, this would preferably be changed so that the
+file is streamed with only part of the file buffered, but it may cause large
+amounts of latency.
+
+Writing to the file happens in memory. The changes are not immediately
+reflected on the remote filesystem as writes often happen in small chunks.
+
+Each opened file has a dirty bit associated with it which is set to true when
+the file is modified in memory. Upon closing the file, the dirty bit is checked
+and file data is uploaded. Checksums are used to ensure that there are no
+unnecessary uploads.
+
+Syncing between clients occurs when a client sends a transaction in the #tx
+channel. Another client picks up the transaction and applies it on their
+filesystem. Checksums are also used to ensure that only the modified chunks are
+downloaded.
+
+Since the filesystem is append-only, each historic state of the filesystem is
+saved and can be recovered in the future by replaying transactions up to a
+specific date.
+
+## Areas of improvement
+
+Renaming folders is horribly inefficient as it involves renaming all children.
+This issue can be solved by giving each file/folder a permanent id and create a
+mapping between paths and ids.
+
+When performing many operations at once, you can get ratelimited. This issue
+can be alleviated by running a connection pool to artificially increase the
+ratelimits.
+
+A lot of permissions and attributes are not implemented. In most systems, the
+size attribute is all that matters. Some attributes such as access times is
+unfeasible to implement as the attribute would be stale most of the time.

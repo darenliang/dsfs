@@ -10,8 +10,6 @@ import (
 )
 
 var (
-	// We need to jankily expose the db for messageCreate
-	db      *DB
 	txReady = atomic.NewBool(false)
 )
 
@@ -52,7 +50,7 @@ func setupDB(dg *discordgo.Session, guildID string) (*DB, error) {
 	DataChannelID = channelMap[DataChannelName].ID
 	TxChannelID = channelMap[TxChannelName].ID
 
-	db = &DB{
+	db := &DB{
 		radix: iradix.New(),
 	}
 	channel := channelMap[TxChannelName]
@@ -95,7 +93,7 @@ func setupDB(dg *discordgo.Session, guildID string) (*DB, error) {
 			}
 		}
 
-		applyMessageTxs(db, messages)
+		applyMessageTxs(db, messages, false)
 	} else {
 		tx := Tx{
 			Tx:   WriteTx,

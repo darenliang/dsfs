@@ -2,7 +2,10 @@ package main
 
 import (
 	"bytes"
+	"crypto/sha1"
+	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/bwmarrin/discordgo"
 	"github.com/darenliang/dsfs/fuse"
@@ -75,9 +78,9 @@ func (fs *Dsfs) Mknod(path string, mode uint32, dev uint64) int {
 
 func (fs *Dsfs) Mkdir(path string, mode uint32) int {
 	fmt.Println("Mkdir", path, mode)
-	pathBytes := []byte(path)
-
 	fs.lock.Lock()
+
+	pathBytes := []byte(path)
 	// Check parent in db
 	if _, ok := fs.db.radix.Get([]byte(getDir(path))); !ok {
 		fs.lock.Unlock()
@@ -113,7 +116,6 @@ func (fs *Dsfs) Mkdir(path string, mode uint32) int {
 
 func (fs *Dsfs) Open(path string, flags int) (int, uint64) {
 	fmt.Println("Open", path, flags)
-
 	fs.lock.Lock()
 
 	// Check open map
@@ -135,10 +137,10 @@ func (fs *Dsfs) Open(path string, flags int) (int, uint64) {
 	}
 
 	fs.open[path] = &FileData{
-		data:    make([]byte, tx.Stat.Size),
+		data:    make([]byte, tx.Size),
 		syncing: atomic.NewBool(false),
-		mtim:    tx.Stat.Mtim,
-		ctim:    tx.Stat.Ctim,
+		mtim:    tx.Mtim,
+		ctim:    tx.Ctim,
 	}
 	fs.lock.Unlock()
 
@@ -153,14 +155,18 @@ func (fs *Dsfs) Open(path string, flags int) (int, uint64) {
 		buffer := make([]byte, MaxDiscordFileSize)
 
 		dlID := func(id string, ofst int) error {
+			file, ok := fs.open[path]
+			if !ok {
+				return errors.New("file no longer exists")
+			}
 			n, err := getDataFile(DataChannelID, id, buffer)
 			if err != nil {
 				fmt.Println("Network error with Discord", err)
 				return err
 			}
-			fs.open[path].lock.Lock()
-			copy(fs.open[path].data[ofst:ofst+n], buffer[:n])
-			fs.open[path].lock.Unlock()
+			file.lock.Lock()
+			copy(file.data[ofst:ofst+n], buffer[:n])
+			file.lock.Unlock()
 			return nil
 		}
 
@@ -201,7 +207,6 @@ func (fs *Dsfs) Open(path string, flags int) (int, uint64) {
 
 func (fs *Dsfs) Unlink(path string) int {
 	fmt.Println("Unlink", path)
-
 	fs.lock.Lock()
 
 	pathBytes := []byte(path)
@@ -240,7 +245,6 @@ func (fs *Dsfs) Unlink(path string) int {
 
 func (fs *Dsfs) Rmdir(path string) int {
 	fmt.Println("Rmdir", path)
-
 	fs.lock.Lock()
 
 	pathBytes := []byte(path)
@@ -281,7 +285,6 @@ func (fs *Dsfs) Rmdir(path string) int {
 
 func (fs *Dsfs) Rename(oldpath string, newpath string) int {
 	fmt.Println("Rename", oldpath, newpath)
-
 	fs.lock.Lock()
 
 	if _, ok := fs.db.radix.Get([]byte(getDir(newpath))); !ok {
@@ -337,7 +340,10 @@ func (fs *Dsfs) Rename(oldpath string, newpath string) int {
 	if err != nil {
 		return -fuse.EACCES
 	}
+
+	fs.lock.Lock()
 	fs.db.radix, _, _ = fs.db.radix.Insert(newpathBytes, tx)
+	fs.lock.Unlock()
 
 	b, _ = json.Marshal(createDeleteTx(oldpath))
 	if len(b) > MaxDiscordFileSize {
@@ -347,23 +353,24 @@ func (fs *Dsfs) Rename(oldpath string, newpath string) int {
 	if err != nil {
 		return -fuse.EACCES
 	}
+	fs.lock.Lock()
 	fs.db.radix, _, _ = fs.db.radix.Delete(oldpathBytes)
+	fs.lock.Unlock()
 
 	return 0
 }
 
 func (fs *Dsfs) Getattr(path string, stat *fuse.Stat_t, fh uint64) int {
 	fmt.Println("Getattr", path, fh)
-
 	fs.lock.Lock()
 	defer fs.lock.Unlock()
 
 	// Check open map
-	if _, ok := fs.open[path]; ok {
+	if file, ok := fs.open[path]; ok {
 		stat.Mode = fuse.S_IFREG | 0777
-		stat.Size = int64(len(fs.open[path].data))
-		stat.Ctim = fuse.NewTimespec(fs.open[path].ctim)
-		stat.Mtim = fuse.NewTimespec(fs.open[path].mtim)
+		stat.Size = int64(len(file.data))
+		stat.Ctim = fuse.NewTimespec(file.ctim)
+		stat.Mtim = fuse.NewTimespec(file.mtim)
 		return 0
 	}
 
@@ -375,9 +382,9 @@ func (fs *Dsfs) Getattr(path string, stat *fuse.Stat_t, fh uint64) int {
 	if tx.Type == FileType {
 		tx := val.(Tx)
 		stat.Mode = fuse.S_IFREG | 0777
-		stat.Size = tx.Stat.Size
-		stat.Ctim = fuse.NewTimespec(tx.Stat.Ctim)
-		stat.Mtim = fuse.NewTimespec(tx.Stat.Mtim)
+		stat.Size = tx.Size
+		stat.Ctim = fuse.NewTimespec(tx.Ctim)
+		stat.Mtim = fuse.NewTimespec(tx.Mtim)
 	} else {
 		stat.Mode = fuse.S_IFDIR | 0777
 	}
@@ -387,58 +394,59 @@ func (fs *Dsfs) Getattr(path string, stat *fuse.Stat_t, fh uint64) int {
 func (fs *Dsfs) Truncate(path string, size int64, fh uint64) int {
 	// Please note that Truncate only truncates in mem!
 	fmt.Println("Truncate", path, size, fh)
-
 	fs.lock.Lock()
 
-	if _, ok := fs.open[path]; !ok {
+	file, ok := fs.open[path]
+	if !ok {
 		fs.lock.Unlock()
 		return -fuse.ENOENT
 	}
 
-	filesize := int64(len(fs.open[path].data))
+	filesize := int64(len(file.data))
 	fs.lock.Unlock()
 
-	fs.open[path].lock.Lock()
+	file.lock.Lock()
 	if size == filesize {
-		fs.open[path].lock.Unlock()
+		file.lock.Unlock()
 		return 0
 	} else if size < filesize {
-		fs.open[path].data = fs.open[path].data[:size]
+		file.data = file.data[:size]
 	} else {
-		fs.open[path].data = append(fs.open[path].data, make([]byte, size-filesize)...)
+		file.data = append(file.data, make([]byte, size-filesize)...)
 	}
 
-	fs.open[path].mtim = time.Now()
-	fs.open[path].lock.Unlock()
+	file.mtim = time.Now()
+	file.dirty = true
+	file.lock.Unlock()
 
 	return 0
 }
 
 func (fs *Dsfs) Read(path string, buff []byte, ofst int64, fh uint64) int {
 	fmt.Println("Read", path, len(buff), ofst, fh)
-
 	fs.lock.Lock()
 
-	if _, ok := fs.open[path]; !ok {
+	file, ok := fs.open[path]
+	if !ok {
 		fs.lock.Unlock()
 		return -fuse.ENOENT
 	}
 
-	filesize := int64(len(fs.open[path].data))
+	filesize := int64(len(file.data))
 	endofst := ofst + int64(len(buff))
 	fs.lock.Unlock()
 
-	fs.open[path].lock.RLock()
+	file.lock.RLock()
 	if endofst > filesize {
 		endofst = filesize
 	}
 	if endofst < ofst {
-		fs.open[path].lock.RUnlock()
+		file.lock.RUnlock()
 		return 0
 	}
 
-	bytesRead := copy(buff, fs.open[path].data[ofst:endofst])
-	fs.open[path].lock.RUnlock()
+	bytesRead := copy(buff, file.data[ofst:endofst])
+	file.lock.RUnlock()
 
 	return bytesRead
 }
@@ -446,27 +454,27 @@ func (fs *Dsfs) Read(path string, buff []byte, ofst int64, fh uint64) int {
 func (fs *Dsfs) Write(path string, buff []byte, ofst int64, fh uint64) int {
 	// Please note that Write only writes to mem!
 	fmt.Println("Write", path, len(buff), ofst, fh)
-
 	fs.lock.Lock()
 
-	if _, ok := fs.open[path]; !ok {
+	file, ok := fs.open[path]
+	if !ok {
 		fs.lock.Unlock()
 		return -fuse.ENOENT
 	}
 
-	filesize := int64(len(fs.open[path].data))
+	filesize := int64(len(file.data))
 	endofst := ofst + int64(len(buff))
 	fs.lock.Unlock()
 
-	fs.open[path].lock.Lock()
+	file.lock.Lock()
 	if endofst > filesize {
-		fs.open[path].data = append(fs.open[path].data, make([]byte, endofst-filesize)...)
+		file.data = append(file.data, make([]byte, endofst-filesize)...)
 	}
 
-	bytesWrite := copy(fs.open[path].data[ofst:endofst], buff)
-	fs.open[path].mtim = time.Now()
-	fs.open[path].dirty = true
-	fs.open[path].lock.Unlock()
+	bytesWrite := copy(file.data[ofst:endofst], buff)
+	file.mtim = time.Now()
+	file.dirty = true
+	file.lock.Unlock()
 
 	return bytesWrite
 }
@@ -476,7 +484,6 @@ func (fs *Dsfs) Release(path string, fh uint64) int {
 	// When a file is closed and is "dirty" (aka modified), the entire file
 	// is flushed in the background.
 	fmt.Println("Release", path, fh)
-
 	fs.lock.Lock()
 
 	file, ok := fs.open[path]
@@ -491,45 +498,95 @@ func (fs *Dsfs) Release(path string, fh uint64) int {
 		return 0
 	}
 
+	pathBytes := []byte(path)
+	val, overwrite := fs.db.radix.Get(pathBytes)
+
 	tx := Tx{
 		Tx:      WriteTx,
 		Path:    path,
 		Type:    FileType,
 		FileIDs: make([]string, 0),
-		Stat: Stat{
-			Size: int64(len(file.data)),
-			Mtim: file.mtim,
-			Ctim: file.ctim,
-		},
+		Size:    int64(len(file.data)),
+		Mtim:    file.mtim,
+		Ctim:    file.ctim,
 	}
 	fs.lock.Unlock()
 
 	go func() {
-		fmt.Printf("Uploading %s in the background", path)
 		// Do not attempt to run more than one write job at once for each path
 		if file.syncing.Load() {
 			return
 		}
-		file.lock.RLock()
+		fmt.Printf("Uploading %s in the background\n", path)
 		file.syncing.Store(true)
-		file.dirty = false
+		defer file.syncing.Store(false)
 
-		defer file.lock.RUnlock()
-		defer func() { file.syncing.Store(false) }()
+		up := func(idx int, fileID string, checksum string) error {
+			file.lock.RLock()
 
-		// Dump mem data
-		cursor := 0
-		for cursor < len(file.data) {
-			end := cursor + MaxDiscordFileSize
+			ofst := idx * MaxDiscordFileSize
+
+			// We need to be very careful about this because we want lock with
+			// quick and correct contention.
+			if ofst > len(file.data) {
+				file.lock.RUnlock()
+				return nil
+			}
+
+			end := ofst + MaxDiscordFileSize
 			if end > len(file.data) {
 				end = len(file.data)
 			}
-			msg, err := fs.dg.ChannelFileSend(DataChannelID, DataChannelName, bytes.NewReader(file.data[cursor:end]))
-			if err != nil {
-				return
+
+			buffer := file.data[ofst:end]
+			newChecksum := sha1.Sum(buffer)
+			newChecksumStr := base64.URLEncoding.EncodeToString(newChecksum[:])
+
+			// Checksum valid skipping chunk
+			if checksum == newChecksumStr {
+				tx.Checksums = append(tx.Checksums, checksum)
+				tx.FileIDs = append(tx.FileIDs, fileID)
+				file.lock.RUnlock()
+				return nil
 			}
+			file.lock.RUnlock()
+
+			msg, err := fs.dg.ChannelFileSend(DataChannelID, DataChannelName, bytes.NewReader(buffer))
+			if err != nil {
+				return err
+			}
+			tx.Checksums = append(tx.Checksums, newChecksumStr)
 			tx.FileIDs = append(tx.FileIDs, msg.Attachments[0].ID)
-			cursor += MaxDiscordFileSize
+			return nil
+		}
+
+		end := len(file.data) / MaxDiscordFileSize
+		if len(file.data)%MaxDiscordFileSize != 0 {
+			end++
+		}
+
+		// Dump data selectively based on checksum
+		// or if checksum doesn't exist dump all data
+		if overwrite {
+			oldTx := val.(Tx)
+			for i := 0; i < end; i++ {
+				fileID, checksum := "", ""
+				if i < len(oldTx.Checksums) {
+					fileID, checksum = oldTx.FileIDs[i], oldTx.Checksums[i]
+				}
+				err := up(i, fileID, checksum)
+				if err != nil {
+					return
+				}
+			}
+		} else {
+			tx.Checksums = make([]string, 0, end)
+			for i := 0; i < end; i++ {
+				err := up(i, "", "")
+				if err != nil {
+					return
+				}
+			}
 		}
 
 		b, _ := json.Marshal(tx)
@@ -540,7 +597,9 @@ func (fs *Dsfs) Release(path string, fh uint64) int {
 		if err != nil {
 			return
 		}
-		fs.db.radix, _, _ = fs.db.radix.Insert([]byte(path), tx)
+		fs.lock.Lock()
+		fs.db.radix, _, _ = fs.db.radix.Insert(pathBytes, tx)
+		fs.lock.Unlock()
 		fmt.Println("Release done", path)
 	}()
 
@@ -561,7 +620,6 @@ func (fs *Dsfs) Readdir(
 	fh uint64,
 ) int {
 	fmt.Println("Readdir", path, ofst, fh)
-
 	fs.lock.Lock()
 	defer fs.lock.Unlock()
 
@@ -583,9 +641,9 @@ func (fs *Dsfs) Readdir(
 		if tx.Type == FileType {
 			fill(name, &fuse.Stat_t{
 				Mode: fuse.S_IFREG | 0777,
-				Size: tx.Stat.Size,
-				Ctim: fuse.NewTimespec(tx.Stat.Ctim),
-				Mtim: fuse.NewTimespec(tx.Stat.Mtim),
+				Size: tx.Size,
+				Ctim: fuse.NewTimespec(tx.Ctim),
+				Mtim: fuse.NewTimespec(tx.Mtim),
 			}, 0)
 		} else {
 			fill(name, &fuse.Stat_t{Mode: fuse.S_IFDIR | 0777}, 0)
@@ -622,4 +680,61 @@ func (fs *Dsfs) Statfs(path string, stat *fuse.Statfs_t) int {
 	stat.Bfree = stat.Blocks
 	stat.Bavail = stat.Blocks
 	return 0
+}
+
+func (fs *Dsfs) ApplyLiveTx(pathBytes []byte, tx Tx) error {
+	fmt.Println("ApplyLiveTx", tx.Path)
+	fs.lock.Lock()
+
+	db.radix, _, _ = db.radix.Insert(pathBytes, tx)
+	file, ok := fs.open[tx.Path]
+	if !ok {
+		fs.lock.Unlock()
+		return nil
+	}
+	fs.lock.Unlock()
+
+	file.lock.Lock()
+	filesize := int64(len(file.data))
+	if tx.Size < filesize {
+		file.data = file.data[:tx.Size]
+	} else if tx.Size > filesize {
+		file.data = append(file.data, make([]byte, tx.Size-filesize)...)
+	}
+	file.lock.Unlock()
+
+	buffer := make([]byte, MaxDiscordFileSize)
+	for idx, checksum := range tx.Checksums {
+		file.lock.Lock()
+		ofst := idx * MaxDiscordFileSize
+		// Something can happen between truncating and patching memory.
+		// In this case it's really hard to recover.
+		if ofst >= len(file.data) {
+			file.lock.Unlock()
+			return errors.New("file changed while upcoming change is applied")
+		}
+		end := ofst + MaxDiscordFileSize
+		if end > len(file.data) {
+			end = len(file.data)
+		}
+
+		oldChecksum := sha1.Sum(file.data[ofst:end])
+		oldChecksumStr := base64.URLEncoding.EncodeToString(oldChecksum[:])
+		file.lock.Unlock()
+
+		if checksum == oldChecksumStr {
+			continue
+		}
+
+		n, err := getDataFile(DataChannelID, tx.FileIDs[idx], buffer)
+		if err != nil {
+			return err
+		}
+
+		file.lock.Lock()
+		copy(file.data[ofst:ofst+n], buffer)
+		file.lock.Unlock()
+	}
+
+	return nil
 }
