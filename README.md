@@ -1,3 +1,5 @@
+
+
 # dsfs
 
 An experiment with Filesystem in USErspace (FUSE) with Discord attachments.
@@ -80,12 +82,12 @@ reflected on the remote filesystem as writes often happen in small chunks.
 Each opened file has a dirty bit associated with it which is set to true when
 the file is modified in memory. Upon closing the file, the dirty bit is checked
 and file data is uploaded. Checksums are used to ensure that there are no
-unnecessary uploads.
+unnecessary chunks uploads.
 
 Syncing between clients occurs when a client sends a transaction in the #tx
 channel. Another client picks up the transaction and applies it on their
-filesystem. Checksums are also used to ensure that only the modified chunks are
-downloaded.
+filesystem. When a file is already opened, checksums are used to ensure that
+only modified chunks are downloaded and patched.
 
 Since the filesystem is append-only, each historic state of the filesystem is
 saved and can be recovered in the future by replaying transactions up to a
