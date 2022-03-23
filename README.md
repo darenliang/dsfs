@@ -107,5 +107,5 @@ unfeasible to implement as the attribute would be stale most of the time.
 
 Startup times can get long when there is a long transaction history. To speed
 things up it is possible to create periodic snapshots where multiple transactions
-are into one transaction message. Each message can hold 8MB of transaction data
-which is usually worth terabytes of data.
+are put into one transaction message. Each message can hold 8MB of transaction data
+which can manage upwards of terabytes of data.
