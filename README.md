@@ -51,7 +51,7 @@ Tx format:
 }
 ```
 
-Some transactions use a combination of the two transactions (e.g. rename).
+Some transactions use a combination of the write and delete transactions (e.g. rename).
 
 ### Walkthrough
 
