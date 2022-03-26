@@ -12,14 +12,14 @@ import (
 )
 
 type Tx struct {
-	Ctim      time.Time `json:"ctim"`
-	Mtim      time.Time `json:"mtim"`
+	Ctim      time.Time `json:"ctim,omitempty"`
+	Mtim      time.Time `json:"mtim,omitempty"`
 	Path      string    `json:"path"`
-	FileIDs   []string  `json:"ids"`
-	Checksums []string  `json:"sums"`
+	FileIDs   []string  `json:"ids,omitempty"`
+	Checksums []string  `json:"sums,omitempty"`
 	Tx        int       `json:"tx"`
-	Type      int       `json:"type"`
-	Size      int64     `json:"size"`
+	Type      int       `json:"type,omitempty"`
+	Size      int64     `json:"size,omitempty"`
 }
 
 func getDataFile(channelID string, fileID string, buffer []byte) (int, error) {
