@@ -29,6 +29,8 @@ The FUSE libraries required for each platform:
 Please check the requirements for building
 with [cgofuse](https://github.com/winfsp/cgofuse).
 
+Cgo is required and the mount point argument is only for Linux/macOS.
+
 To build:
 
 ```bash
@@ -38,11 +40,11 @@ go build
 To run:
 
 ```bash
-dsfs -t <Bot Token> -s <Server ID>
+dsfs -t <Bot token> -s <Server ID> -m <Mount point>
 ```
 
 To run with transaction compaction:
 
 ```bash
-dsfs -t <Bot Token> -s <Server ID> -c
+dsfs -t <Bot token> -s <Server ID> -m <Mount point> -c
 ```
