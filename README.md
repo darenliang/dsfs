@@ -10,8 +10,8 @@ Files are backed on Discord with a very primitive append-only filesystem.
 This is considered pre-alpha software and there will be bugs pertaining to
 synchronization and functionality.
 
-Here is a blog post detailing some of the implementation details in
-dsfs: https://www.darenliang.com/posts/fuseing-for-fun
+Here is a blog post going over some of the implementation
+details: https://www.darenliang.com/posts/fuseing-for-fun
 
 ## Cross-platform support
 
