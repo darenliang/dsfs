@@ -1,6 +1,6 @@
 # dsfs
 
-An experiment with Filesystem in USErspace (FUSE) with Discord attachments.
+An experimental Filesystem in USErspace (FUSE) with Discord attachments.
 
 > :warning: **Use at your own risk!** This is an unfinished project and only
 > for research or recreational purposes only.
