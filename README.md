@@ -41,7 +41,6 @@ Prerequisites: [FUSE for macOS](https://osxfuse.github.io),
 [command line tools](https://developer.apple.com/library/content/technotes/tn2339/_index.html)
 
 ```bash
-cd cgofuse
 go build
 ```
 
@@ -50,7 +49,6 @@ go build
 Prerequisites: libfuse-dev, gcc
 
 ```bash
-cd cgofuse
 go build
 ```
 
