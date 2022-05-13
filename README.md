@@ -1,6 +1,7 @@
 # dsfs
 
-An experimental Filesystem in USErspace (FUSE) with Discord attachments.
+An experimental Filesystem in USErspace (FUSE) with Discord attachments
+using [cgofuse](https://github.com/winfsp/cgofuse).
 
 > :warning: **Use at your own risk!** This is an unfinished project and only
 > for research or recreational purposes only.
@@ -13,29 +14,50 @@ synchronization and functionality.
 Here is a blog post going over some of the implementation
 details: https://www.darenliang.com/posts/fuseing-for-fun
 
-## Cross-platform support
+## Building
 
-[Cgofuse](https://github.com/winfsp/cgofuse) is used which supports Windows,
-macOS and Linux.
+### Windows cgo
 
-The FUSE libraries required for each platform:
+Prerequisites: [WinFsp](https://github.com/winfsp/winfsp),
+gcc (e.g. from [Mingw-builds](http://mingw-w64.org/doku.php/download))
 
-* Windows: [WinFsp](https://github.com/winfsp/winfsp)
-* macOS: [macFUSE](https://osxfuse.github.io/)
-* Linux: [libfuse](https://github.com/libfuse/libfuse)
+```
+set CPATH=C:\Program Files (x86)\WinFsp\inc\fuse
+go build
+```
+
+### Windows !cgo
+
+Prerequisites: [WinFsp](https://github.com/winfsp/winfsp)
+
+```
+set CGO_ENABLED=0
+go build
+```
+
+### macOS
+
+Prerequisites: [FUSE for macOS](https://osxfuse.github.io),
+[command line tools](https://developer.apple.com/library/content/technotes/tn2339/_index.html)
+
+```bash
+cd cgofuse
+go build
+```
+
+### Linux
+
+Prerequisites: libfuse-dev, gcc
+
+```bash
+cd cgofuse
+go build
+```
 
 ## Usage
 
-Please check the requirements for building
-with [cgofuse](https://github.com/winfsp/cgofuse).
-
-Cgo is required and the mount point argument is only for Linux/macOS.
-
-To build:
-
-```bash
-go build
-```
+The mount point argument is only for Linux/macOS. A drive letter is chosen for
+Windows.
 
 To run:
 

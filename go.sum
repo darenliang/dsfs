@@ -1,5 +1,5 @@
-github.com/bwmarrin/discordgo v0.24.0 h1:Gw4MYxqHdvhO99A3nXnSLy97z5pmIKHZVJ1JY5ZDPqY=
-github.com/bwmarrin/discordgo v0.24.0/go.mod h1:NJZpH+1AfhIcyQsPeuBKsUtYrRnjkyu0kIVMCHkZtRY=
+github.com/bwmarrin/discordgo v0.25.0 h1:NXhdfHRNxtwso6FPdzW2i3uBvvU7UIQTghmV2T4nqAs=
+github.com/bwmarrin/discordgo v0.25.0/go.mod h1:NJZpH+1AfhIcyQsPeuBKsUtYrRnjkyu0kIVMCHkZtRY=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
