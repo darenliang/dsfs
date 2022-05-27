@@ -12,7 +12,7 @@ This is considered pre-alpha software and there will be bugs pertaining to
 synchronization and functionality.
 
 Here is a blog post going over some of the implementation
-details: https://www.darenliang.com/posts/fuseing-for-fun
+details: [FUSEing for fun](https://www.darenliang.com/posts/fuseing-for-fun)
 
 ## Building
 
@@ -67,4 +67,10 @@ To run with transaction compaction:
 
 ```bash
 dsfs -t <Bot token> -s <Server ID> -m <Mount point> -c
+```
+
+To run with FUSE options:
+
+```bash
+dsfs -t <Bot token> -s <Server ID> -m <Mount point> -o <FUSE option>
 ```
