@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"github.com/bwmarrin/discordgo"
 	"io"
+	"log"
 	"net/http"
 	"time"
 )
@@ -40,7 +41,7 @@ func createDeleteTx(path string) Tx {
 }
 
 func applyMessageTxs(db *DB, ms []*discordgo.Message, buffer *bytes.Buffer, live bool) {
-	fmt.Printf("Applying %d messages with TXs\n", len(ms))
+	log.Printf("Applying %d messages with TXs\n", len(ms))
 	for _, m := range ms {
 		if len(m.Attachments) == 0 {
 			continue
@@ -48,7 +49,7 @@ func applyMessageTxs(db *DB, ms []*discordgo.Message, buffer *bytes.Buffer, live
 
 		resp, err := http.Get(m.Attachments[0].URL)
 		if err != nil {
-			fmt.Printf("%s, skipping tx batch\n", err)
+			log.Printf("%s, skipping tx batch\n", err)
 			continue
 		}
 
@@ -62,7 +63,7 @@ func applyMessageTxs(db *DB, ms []*discordgo.Message, buffer *bytes.Buffer, live
 			tx := Tx{}
 			err := json.Unmarshal([]byte(line), &tx)
 			if err != nil {
-				fmt.Printf("%s, skipping tx\n", err)
+				log.Printf("%s, skipping tx\n", err)
 				continue
 			}
 
@@ -70,17 +71,17 @@ func applyMessageTxs(db *DB, ms []*discordgo.Message, buffer *bytes.Buffer, live
 
 			switch tx.Tx {
 			case WriteTx:
-				fmt.Println("Write", tx.Path)
+				log.Println("Write", tx.Path)
 				if live {
 					err := dsfs.ApplyLiveTx(pathBytes, tx)
 					if err != nil {
-						fmt.Println("failed to apply live tx", err)
+						log.Println("failed to apply live tx", err)
 					}
 				} else {
 					db.radix, _, _ = db.radix.Insert(pathBytes, tx)
 				}
 			case DeleteTx:
-				fmt.Println("Delete", tx.Path)
+				log.Println("Delete", tx.Path)
 				if live {
 					dsfs.lock.Lock()
 					db.radix, _, _ = db.radix.Delete(pathBytes)
@@ -90,7 +91,7 @@ func applyMessageTxs(db *DB, ms []*discordgo.Message, buffer *bytes.Buffer, live
 					db.radix, _, _ = db.radix.Delete(pathBytes)
 				}
 			default:
-				fmt.Printf("found unknown tx type %d\n, skipping tx", tx.Tx)
+				log.Printf("found unknown tx type %d\n, skipping tx", tx.Tx)
 				continue
 			}
 
@@ -103,7 +104,7 @@ func applyMessageTxs(db *DB, ms []*discordgo.Message, buffer *bytes.Buffer, live
 
 		resp.Body.Close()
 	}
-	fmt.Println("Done applying TXs")
+	log.Println("Done applying TXs")
 }
 
 func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {

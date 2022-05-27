@@ -6,10 +6,10 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"github.com/bwmarrin/discordgo"
 	"github.com/darenliang/dsfs/fuse"
 	"go.uber.org/atomic"
+	"log"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -47,7 +47,7 @@ func NewDsfs(dg *discordgo.Session, db *DB) *Dsfs {
 }
 
 func (fs *Dsfs) Mknod(path string, mode uint32, dev uint64) int {
-	fmt.Println("Mknod", path, mode, dev)
+	log.Println("Mknod", path, mode, dev)
 	fs.lock.Lock()
 	defer fs.lock.Unlock()
 
@@ -77,7 +77,7 @@ func (fs *Dsfs) Mknod(path string, mode uint32, dev uint64) int {
 }
 
 func (fs *Dsfs) Mkdir(path string, mode uint32) int {
-	fmt.Println("Mkdir", path, mode)
+	log.Println("Mkdir", path, mode)
 	fs.lock.Lock()
 
 	pathBytes := []byte(path)
@@ -115,7 +115,7 @@ func (fs *Dsfs) Mkdir(path string, mode uint32) int {
 }
 
 func (fs *Dsfs) Open(path string, flags int) (int, uint64) {
-	fmt.Println("Open", path, flags)
+	log.Println("Open", path, flags)
 	fs.lock.Lock()
 
 	// Check open map
@@ -161,7 +161,7 @@ func (fs *Dsfs) Open(path string, flags int) (int, uint64) {
 			}
 			n, err := getDataFile(DataChannelID, id, buffer)
 			if err != nil {
-				fmt.Println("Network error with Discord", err)
+				log.Println("Network error with Discord", err)
 				return err
 			}
 			file.lock.Lock()
@@ -206,7 +206,7 @@ func (fs *Dsfs) Open(path string, flags int) (int, uint64) {
 }
 
 func (fs *Dsfs) Unlink(path string) int {
-	fmt.Println("Unlink", path)
+	log.Println("Unlink", path)
 	fs.lock.Lock()
 
 	pathBytes := []byte(path)
@@ -244,7 +244,7 @@ func (fs *Dsfs) Unlink(path string) int {
 }
 
 func (fs *Dsfs) Rmdir(path string) int {
-	fmt.Println("Rmdir", path)
+	log.Println("Rmdir", path)
 	fs.lock.Lock()
 
 	pathBytes := []byte(path)
@@ -284,7 +284,7 @@ func (fs *Dsfs) Rmdir(path string) int {
 }
 
 func (fs *Dsfs) Rename(oldpath string, newpath string) int {
-	fmt.Println("Rename", oldpath, newpath)
+	log.Println("Rename", oldpath, newpath)
 	fs.lock.Lock()
 
 	if _, ok := fs.db.radix.Get([]byte(getDir(newpath))); !ok {
@@ -368,7 +368,7 @@ func (fs *Dsfs) Rename(oldpath string, newpath string) int {
 }
 
 func (fs *Dsfs) Getattr(path string, stat *fuse.Stat_t, fh uint64) int {
-	fmt.Println("Getattr", path, fh)
+	log.Println("Getattr", path, fh)
 	fs.lock.Lock()
 	defer fs.lock.Unlock()
 
@@ -400,7 +400,7 @@ func (fs *Dsfs) Getattr(path string, stat *fuse.Stat_t, fh uint64) int {
 
 func (fs *Dsfs) Truncate(path string, size int64, fh uint64) int {
 	// Please note that Truncate only truncates in mem!
-	fmt.Println("Truncate", path, size, fh)
+	log.Println("Truncate", path, size, fh)
 	fs.lock.Lock()
 
 	file, ok := fs.open[path]
@@ -430,7 +430,7 @@ func (fs *Dsfs) Truncate(path string, size int64, fh uint64) int {
 }
 
 func (fs *Dsfs) Read(path string, buff []byte, ofst int64, fh uint64) int {
-	fmt.Println("Read", path, len(buff), ofst, fh)
+	log.Println("Read", path, len(buff), ofst, fh)
 	fs.lock.Lock()
 
 	file, ok := fs.open[path]
@@ -460,7 +460,7 @@ func (fs *Dsfs) Read(path string, buff []byte, ofst int64, fh uint64) int {
 
 func (fs *Dsfs) Write(path string, buff []byte, ofst int64, fh uint64) int {
 	// Please note that Write only writes to mem!
-	fmt.Println("Write", path, len(buff), ofst, fh)
+	log.Println("Write", path, len(buff), ofst, fh)
 	fs.lock.Lock()
 
 	file, ok := fs.open[path]
@@ -490,7 +490,7 @@ func (fs *Dsfs) Release(path string, fh uint64) int {
 	// All open files are dumped to memory.
 	// When a file is closed and is "dirty" (aka modified), the entire file
 	// is flushed in the background.
-	fmt.Println("Release", path, fh)
+	log.Println("Release", path, fh)
 	fs.lock.Lock()
 
 	file, ok := fs.open[path]
@@ -524,7 +524,7 @@ func (fs *Dsfs) Release(path string, fh uint64) int {
 		if file.syncing.Load() {
 			return
 		}
-		fmt.Printf("Uploading %s in the background\n", path)
+		log.Printf("Uploading %s in the background\n", path)
 		file.syncing.Store(true)
 		defer file.syncing.Store(false)
 		defer func() { file.dirty = false }()
@@ -608,7 +608,7 @@ func (fs *Dsfs) Release(path string, fh uint64) int {
 		fs.lock.Lock()
 		fs.db.radix, _, _ = fs.db.radix.Insert(pathBytes, tx)
 		fs.lock.Unlock()
-		fmt.Println("Release done", path)
+		log.Println("Release done", path)
 	}()
 
 	// TODO: find a good way to evict stale files from mem
@@ -617,7 +617,7 @@ func (fs *Dsfs) Release(path string, fh uint64) int {
 }
 
 func (fs *Dsfs) Opendir(path string) (int, uint64) {
-	fmt.Println("Opendir", path)
+	log.Println("Opendir", path)
 	return 0, 1
 }
 
@@ -627,7 +627,7 @@ func (fs *Dsfs) Readdir(
 	ofst int64,
 	fh uint64,
 ) int {
-	fmt.Println("Readdir", path, ofst, fh)
+	log.Println("Readdir", path, ofst, fh)
 	fs.lock.Lock()
 	defer fs.lock.Unlock()
 
@@ -673,12 +673,12 @@ func (fs *Dsfs) Readdir(
 }
 
 func (fs *Dsfs) Releasedir(path string, fh uint64) int {
-	fmt.Println("Releasedir", path, fh)
+	log.Println("Releasedir", path, fh)
 	return 0
 }
 
 func (fs *Dsfs) Statfs(path string, stat *fuse.Statfs_t) int {
-	fmt.Println("Statfs", path)
+	log.Println("Statfs", path)
 
 	// We are injecting some phony data here.
 	// None of this should matter.
@@ -691,7 +691,7 @@ func (fs *Dsfs) Statfs(path string, stat *fuse.Statfs_t) int {
 }
 
 func (fs *Dsfs) ApplyLiveTx(pathBytes []byte, tx Tx) error {
-	fmt.Println("ApplyLiveTx", tx.Path)
+	log.Println("ApplyLiveTx", tx.Path)
 	fs.lock.Lock()
 
 	fs.db.radix, _, _ = fs.db.radix.Insert(pathBytes, tx)
