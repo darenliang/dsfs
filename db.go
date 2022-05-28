@@ -104,7 +104,7 @@ func setupDB(dg *discordgo.Session, guildID string) (*DB, error) {
 		}
 
 		if compact {
-			log.Println("Compacting TXs")
+			log.Println("compacting TXs")
 			applyMessageTxs(db, messages, txBuffer, false)
 		} else {
 			applyMessageTxs(db, messages, nil, false)
@@ -133,7 +133,7 @@ func setupDB(dg *discordgo.Session, guildID string) (*DB, error) {
 
 	// Return early if compaction is not needed
 	if !compact {
-		log.Println("Compaction not needed")
+		log.Println("compaction not needed")
 		return db, nil
 	}
 

@@ -41,7 +41,7 @@ func createDeleteTx(path string) Tx {
 }
 
 func applyMessageTxs(db *DB, ms []*discordgo.Message, buffer *bytes.Buffer, live bool) {
-	log.Printf("Applying %d messages with TXs\n", len(ms))
+	log.Printf("applying %d messages with TXs\n", len(ms))
 	for _, m := range ms {
 		if len(m.Attachments) == 0 {
 			continue
@@ -104,7 +104,7 @@ func applyMessageTxs(db *DB, ms []*discordgo.Message, buffer *bytes.Buffer, live
 
 		resp.Body.Close()
 	}
-	log.Println("Done applying TXs")
+	log.Println("done applying TXs")
 }
 
 func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {

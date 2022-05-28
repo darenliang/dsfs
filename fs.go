@@ -161,7 +161,7 @@ func (fs *Dsfs) Open(path string, flags int) (int, uint64) {
 			}
 			n, err := getDataFile(DataChannelID, id, buffer)
 			if err != nil {
-				log.Println("Network error with Discord", err)
+				log.Println("network error with Discord", err)
 				return err
 			}
 			file.lock.Lock()
@@ -524,7 +524,7 @@ func (fs *Dsfs) Release(path string, fh uint64) int {
 		if file.syncing.Load() {
 			return
 		}
-		log.Printf("Uploading %s in the background\n", path)
+		log.Printf("uploading %s in the background\n", path)
 		file.syncing.Store(true)
 		defer file.syncing.Store(false)
 		defer func() { file.dirty = false }()
