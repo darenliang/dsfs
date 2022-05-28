@@ -7,7 +7,6 @@ import (
 	"log"
 	"net/http"
 	_ "net/http/pprof"
-	"os"
 )
 
 var (
@@ -15,6 +14,7 @@ var (
 	guildID string
 	mount   string
 	compact bool
+	debug   bool
 	options fuseOpts
 	// We need to jankily expose the db and dsfs for messageCreate
 	db   *DB
@@ -24,15 +24,15 @@ var (
 func init() {
 	flag.StringVar(&token, "t", "", "Bot Token")
 	flag.StringVar(&guildID, "s", "", "Guild ID")
-	flag.StringVar(&mount, "m", "", "Mount point for Linux/macOS")
+	flag.StringVar(&mount, "m", "", "Mount point")
 	flag.BoolVar(&compact, "c", false, "Compact transactions")
+	flag.BoolVar(&debug, "d", false, "Enable pprof")
 	flag.Var(&options, "o", "FUSE options")
 	flag.Parse()
 }
 
 func main() {
-	// If DEBUG is set, expose pprof
-	if len(os.Getenv("DEBUG")) != 0 {
+	if debug {
 		go func() {
 			log.Println("pprof running on port 8000")
 			_ = http.ListenAndServe(":8000", nil)
