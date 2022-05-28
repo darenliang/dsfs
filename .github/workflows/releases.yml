@@ -17,8 +17,6 @@ jobs:
         uses: actions/setup-go@v3
       - name: Install WinFsp
         run: choco install winfsp --pre
-      - name: Install GCC
-        run: choco install mingw
       - name: Build Dsfs
         run: go build -o dsfs.exe -ldflags="-s -w"
       - name: Upload Dsfs
@@ -74,23 +72,23 @@ jobs:
         with:
           name: dsfs-windows
       - name: Zip Windows release
-        run: zip -r dsfs_${{ github.ref }}_windows_amd64.zip dsfs.exe README.md LICENSE
+        run: zip -r dsfs_${{github.ref_name}}_windows_amd64.zip dsfs.exe README.md LICENSE
       - name: Download Linux artifact
         uses: actions/download-artifact@v3
         with:
           name: dsfs-linux
       - name: Tar Gzip Linux release
-        run: tar -czvf dsfs_${{ github.ref }}_linux_amd64.tar.gz dsfs README.md LICENSE
+        run: tar -czvf dsfs_${{github.ref_name}}_linux_amd64.tar.gz dsfs README.md LICENSE
       - name: Download macOS artifact
         uses: actions/download-artifact@v3
         with:
           name: dsfs-macos
       - name: Tar Gzip macOS release
-        run: tar -czvf dsfs_${{ github.ref }}_darwin_amd64.tar.gz dsfs README.md LICENSE
+        run: tar -czvf dsfs_${{github.ref_name}}_darwin_amd64.tar.gz dsfs README.md LICENSE
       - name: Release
         uses: softprops/action-gh-release@v1
         with:
           files: |
-            dsfs_${{ github.ref }}_windows_amd64.zip
-            dsfs_${{ github.ref }}_linux_amd64.tar.gz
-            dsfs_${{ github.ref }}_darwin_amd64.tar.gz
+            dsfs_${{github.ref_name}}_windows_amd64.zip
+            dsfs_${{github.ref_name}}_linux_amd64.tar.gz
+            dsfs_${{github.ref_name}}_darwin_amd64.tar.gz
