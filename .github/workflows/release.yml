@@ -18,7 +18,7 @@ jobs:
       - name: Install GCC
         run: choco install mingw
       - name: Set env
-        run: set CPATH=C:\Program Files (x86)\WinFsp\inc\fuse
+        run: $env:CPATH='C:\Program Files (x86)\WinFsp\inc\fuse'
       - name: Build Dsfs
         run: go build -o dsfs.exe -ldflags="-s -w"
       - name: Upload Dsfs
