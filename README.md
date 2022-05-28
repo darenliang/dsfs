@@ -54,8 +54,7 @@ go build
 
 ## Usage
 
-The mount point argument is only for Linux/macOS. A drive letter is chosen for
-Windows.
+A drive letter is chosen for Windows if the mount point is not provided.
 
 To run:
 
