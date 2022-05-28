@@ -19,6 +19,9 @@ type DB struct {
 	radix *iradix.Tree
 }
 
+// setupDB setups the in-mem database
+// This function needs to be refactored; it looks really gross in its current
+// state.
 func setupDB(dg *discordgo.Session, guildID string) (*DB, error) {
 	defer txReady.Store(true)
 
