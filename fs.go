@@ -11,15 +11,9 @@ import (
 	"go.uber.org/atomic"
 	"log"
 	"path/filepath"
-	"strings"
 	"sync"
 	"time"
 )
-
-func getDir(path string) string {
-	// Handle weirdness with Windows
-	return strings.ReplaceAll(filepath.Dir(path), "\\", "/")
-}
 
 type Dsfs struct {
 	fuse.FileSystemBase
