@@ -1,0 +1,62 @@
+name: Releases
+
+on:
+  push:
+    tags:
+      - "*"
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      - name: Setup Go
+        uses: actions/setup-go@v3
+      - name: Install WinFsp
+        run: choco install winfsp --pre
+      - name: Install GCC
+        run: choco install mingw
+      - name: Set env
+        run: set CPATH=C:\Program Files (x86)\WinFsp\inc\fuse
+      - name: Build Dsfs
+        run: go build -o dsfs.exe -ldflags="-s -w"
+      - name: Upload Dsfs
+        uses: actions/upload-artifact@v3
+        with:
+          name: dsfs-windows
+          path: dsfs.exe
+
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      - name: Setup Go
+        uses: actions/setup-go@v3
+      - name: Install libfuse
+        run: sudo apt-get install -y libfuse-dev
+      - name: Build Dsfs
+        run: go build -o dsfs -ldflags="-s -w"
+      - name: Upload Dsfs
+        uses: actions/upload-artifact@v3
+        with:
+          name: dsfs-linux
+          path: dsfs
+
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      - name: Setup Go
+        uses: actions/setup-go@v3
+      - name: Install macfuse
+        run: brew install macfuse
+      - name: Build Dsfs
+        run: go build -o dsfs -ldflags="-s -w"
+      - name: Upload Dsfs
+        uses: actions/upload-artifact@v3
+        with:
+          name: dsfs-macos
+          path: dsfs
