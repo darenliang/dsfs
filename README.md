@@ -74,3 +74,9 @@ To run with FUSE options:
 ```bash
 dsfs -t <Bot token> -s <Server ID> -m <Mount point> -o <FUSE option>
 ```
+
+## Additional features to consider
+
+- Fast folder rename
+- Connection pooling
+- Buffer to hard disk instead of memory
