@@ -1,9 +1,10 @@
+//go:build !cgo && windows
 // +build !cgo,windows
 
 /*
  * fsop_nocgo_windows.go
  *
- * Copyright 2017-2020 Bill Zissimopoulos
+ * Copyright 2017-2022 Bill Zissimopoulos
  */
 /*
  * This file is part of Cgofuse.
@@ -104,8 +105,8 @@ const (
 	O_RDWR    = 0x0002
 	O_APPEND  = 0x0008
 	O_CREAT   = 0x0100
-	O_EXCL    = 0x0200
-	O_TRUNC   = 0x0400
+	O_TRUNC   = 0x0200
+	O_EXCL    = 0x0400
 	O_ACCMODE = O_RDONLY | O_WRONLY | O_RDWR
 )
 

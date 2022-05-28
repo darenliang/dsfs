@@ -1,7 +1,7 @@
 /*
  * fsop.go
  *
- * Copyright 2017-2020 Bill Zissimopoulos
+ * Copyright 2017-2022 Bill Zissimopoulos
  */
 /*
  * This file is part of Cgofuse.
@@ -169,8 +169,8 @@ type FileInfo_t struct {
 // Lock_t contains file locking information.
 // This structure is analogous to the POSIX struct flock.
 type Lock_t struct {
-	// TxType of lock; F_RDLCK, F_WRLCK, F_UNLCK.
-	TxType int16
+	// Type of lock; F_RDLCK, F_WRLCK, F_UNLCK.
+	Type int16
 
 	// Flag for starting offset.
 	Whence int16
@@ -279,7 +279,7 @@ type FileSystemInterface interface {
 	Fsync(path string, datasync bool, fh uint64) int
 
 	// Lock performs a file locking operation.
-	// Lock(path string, cmd int, lock *Lock_t, fh uint64) int
+	//Lock(path string, cmd int, lock *Lock_t, fh uint64) int
 
 	// Opendir opens a directory.
 	Opendir(path string) (int, uint64)
@@ -317,6 +317,13 @@ type FileSystemInterface interface {
 type FileSystemOpenEx interface {
 	CreateEx(path string, mode uint32, fi *FileInfo_t) int
 	OpenEx(path string, fi *FileInfo_t) int
+}
+
+// FileSystemGetpath is the interface that wraps the Getpath method.
+//
+// Getpath allows a case-insensitive file system to report the correct case of a file path.
+type FileSystemGetpath interface {
+	Getpath(path string, fh uint64) (int, string)
 }
 
 // FileSystemChflags is the interface that wraps the Chflags method.

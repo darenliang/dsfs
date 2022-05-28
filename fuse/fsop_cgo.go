@@ -1,9 +1,10 @@
+//go:build cgo
 // +build cgo
 
 /*
  * fsop_cgo.go
  *
- * Copyright 2017-2020 Bill Zissimopoulos
+ * Copyright 2017-2022 Bill Zissimopoulos
  */
 /*
  * This file is part of Cgofuse.
