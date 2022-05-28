@@ -635,7 +635,7 @@ func (fs *Dsfs) Readdir(
 	fill("..", nil, 0)
 	it := fs.db.radix.Root().Iterator()
 	it.SeekPrefix([]byte(path))
-	for key, val, ok := it.Next(); ok; key, _, ok = it.Next() {
+	for key, val, ok := it.Next(); ok; key, val, ok = it.Next() {
 		subpath := string(key)
 		// File is already open
 		if _, ok := fs.open[subpath]; ok {
