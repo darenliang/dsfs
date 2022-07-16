@@ -4,7 +4,7 @@ import (
 	"flag"
 	"github.com/bwmarrin/discordgo"
 	"github.com/darenliang/dsfs/fuse"
-	"log"
+	"go.uber.org/zap"
 	"net/http"
 	_ "net/http/pprof"
 )
@@ -16,6 +16,7 @@ var (
 	compact bool
 	debug   bool
 	options fuseOpts
+	logger  *zap.SugaredLogger
 	// We need to jankily expose the db and dsfs for messageCreate
 	db   *DB
 	dsfs *Dsfs
@@ -26,22 +27,28 @@ func init() {
 	flag.StringVar(&guildID, "s", "", "Guild ID")
 	flag.StringVar(&mount, "m", "", "Mount point")
 	flag.BoolVar(&compact, "c", false, "Compact transactions")
-	flag.BoolVar(&debug, "d", false, "Enable pprof")
+	flag.BoolVar(&debug, "d", false, "Enable pprof and print debug logs")
 	flag.Var(&options, "o", "FUSE options")
 	flag.Parse()
 }
 
 func main() {
+	zapLogger, _ := zap.NewDevelopment()
 	if debug {
+		logger = zapLogger.Sugar()
 		go func() {
-			log.Println("pprof running on port 8000")
+			logger.Info("pprof running on port 8000")
 			_ = http.ListenAndServe(":8000", nil)
 		}()
+	} else {
+		zapLogger = zapLogger.WithOptions(zap.IncreaseLevel(zap.InfoLevel))
+		logger = zapLogger.Sugar()
 	}
+	defer zapLogger.Sync()
 
 	dg, err := discordgo.New("Bot " + token)
 	if err != nil {
-		log.Println("error creating Discord session,", err)
+		logger.Error("error creating Discord session,", err)
 		return
 	}
 
@@ -50,13 +57,13 @@ func main() {
 
 	err = dg.Open()
 	if err != nil {
-		log.Println("error opening connection,", err)
+		logger.Error("error opening connection,", err)
 		return
 	}
 
 	db, err = setupDB(dg, guildID)
 	if err != nil {
-		log.Println(err)
+		logger.Error(err)
 		return
 	}
 

@@ -8,7 +8,6 @@ import (
 	"github.com/hashicorp/go-immutable-radix"
 	"go.uber.org/atomic"
 	"io"
-	"log"
 )
 
 var (
@@ -107,7 +106,7 @@ func setupDB(dg *discordgo.Session, guildID string) (*DB, error) {
 		}
 
 		if compact {
-			log.Println("compacting TXs")
+			logger.Info("compacting TXs")
 			applyMessageTxs(db, messages, txBuffer, false)
 		} else {
 			applyMessageTxs(db, messages, nil, false)
@@ -136,7 +135,7 @@ func setupDB(dg *discordgo.Session, guildID string) (*DB, error) {
 
 	// Return early if compaction is not needed
 	if !compact {
-		log.Println("compaction not needed")
+		logger.Info("compaction not needed")
 		return db, nil
 	}
 
@@ -145,7 +144,7 @@ func setupDB(dg *discordgo.Session, guildID string) (*DB, error) {
 	for {
 		b, err := txBuffer.ReadBytes('\n')
 		if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
-			log.Println("failed to read message buffer", err)
+			logger.Warn("failed to read message buffer", err)
 			return db, nil
 		}
 		if err != nil || len(b) == 0 {
@@ -154,7 +153,7 @@ func setupDB(dg *discordgo.Session, guildID string) (*DB, error) {
 		if len(messageBuffer)+len(b) > MaxDiscordFileSize {
 			msg, err := dg.ChannelFileSend(TxChannelID, TxChannelName, bytes.NewReader(messageBuffer))
 			if err != nil {
-				log.Println("aborting transaction compaction", err)
+				logger.Warn("aborting transaction compaction", err)
 				return db, nil
 			}
 			if firstMsg == nil {
@@ -171,7 +170,7 @@ func setupDB(dg *discordgo.Session, guildID string) (*DB, error) {
 	if len(messageBuffer) != 0 {
 		msg, err := dg.ChannelFileSend(TxChannelID, TxChannelName, bytes.NewReader(messageBuffer))
 		if err != nil {
-			log.Println("aborting transaction compaction", err)
+			logger.Warn("aborting transaction compaction", err)
 			return db, nil
 		}
 		if firstMsg == nil {
@@ -182,12 +181,12 @@ func setupDB(dg *discordgo.Session, guildID string) (*DB, error) {
 	if firstMsg != nil {
 		err := dg.ChannelMessagePin(TxChannelID, firstMsg.ID)
 		if err != nil {
-			log.Println("failed to pin new transaction start point")
+			logger.Warn("failed to pin new transaction start point")
 			return db, nil
 		}
 		err = dg.ChannelMessageUnpin(TxChannelID, pinnedMsg.ID)
 		if err != nil {
-			log.Println("failed to unpin old transaction start point, please manually unpin old pinned messages")
+			logger.Warn("failed to unpin old transaction start point, please manually unpin old pinned messages")
 			return db, nil
 		}
 	}
