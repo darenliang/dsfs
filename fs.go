@@ -27,6 +27,7 @@ type FileData struct {
 	ctim    time.Time
 	syncing *atomic.Bool
 	data    []byte
+	load    *Load
 	lock    sync.RWMutex
 	dirty   bool
 }
@@ -63,6 +64,7 @@ func (fs *Dsfs) Mknod(path string, mode uint32, dev uint64) int {
 
 	fs.open[path] = &FileData{
 		data:    make([]byte, 0),
+		load:    newLoad(),
 		syncing: atomic.NewBool(false),
 		mtim:    time.Now(),
 		ctim:    time.Now(),
@@ -133,6 +135,7 @@ func (fs *Dsfs) Open(path string, flags int) (int, uint64) {
 
 	fs.open[path] = &FileData{
 		data:    make([]byte, tx.Size),
+		load:    newLoad(),
 		syncing: atomic.NewBool(false),
 		mtim:    tx.Mtim,
 		ctim:    tx.Ctim,
@@ -163,6 +166,7 @@ func (fs *Dsfs) Open(path string, flags int) (int, uint64) {
 			}
 			file.lock.Lock()
 			copy(file.data[ofst:ofst+n], buffer[:n])
+			file.load.addRange(int64(ofst), int64(ofst+n))
 			file.lock.Unlock()
 			return nil
 		}
@@ -409,18 +413,19 @@ func (fs *Dsfs) Truncate(path string, size int64, fh uint64) int {
 		fs.lock.Unlock()
 		return -fuse.ENOENT
 	}
-
-	filesize := int64(len(file.data))
 	fs.lock.Unlock()
 
 	file.lock.Lock()
+	filesize := int64(len(file.data))
 	if size == filesize {
 		file.lock.Unlock()
 		return 0
 	} else if size < filesize {
 		file.data = file.data[:size]
+		file.load.truncate(size)
 	} else {
 		file.data = append(file.data, make([]byte, size-filesize)...)
+		file.load.addRange(filesize, filesize+size)
 	}
 
 	file.mtim = time.Now()
@@ -444,21 +449,36 @@ func (fs *Dsfs) Read(path string, buff []byte, ofst int64, fh uint64) int {
 		fs.lock.Unlock()
 		return -fuse.ENOENT
 	}
-
-	filesize := int64(len(file.data))
-	endofst := ofst + int64(len(buff))
 	fs.lock.Unlock()
 
+	endofst := ofst + int64(len(buff))
+	newEndofst := endofst
+	retries := 0
+
 	file.lock.RLock()
-	if endofst > filesize {
-		endofst = filesize
-	}
-	if endofst < ofst {
+	for {
+		filesize := int64(len(file.data))
+		if endofst > filesize {
+			newEndofst = filesize
+		}
+		if newEndofst < ofst {
+			file.lock.RUnlock()
+			return 0
+		}
+		if file.load.isReady(ofst, newEndofst) {
+			break
+		}
+		if retries >= MaxRetries {
+			file.lock.RUnlock()
+			return 0
+		}
+		retries++
 		file.lock.RUnlock()
-		return 0
+		time.Sleep(PollInterval * time.Millisecond)
+		file.lock.RLock()
 	}
 
-	bytesRead := copy(buff, file.data[ofst:endofst])
+	bytesRead := copy(buff, file.data[ofst:newEndofst])
 	file.lock.RUnlock()
 
 	return bytesRead
@@ -479,17 +499,20 @@ func (fs *Dsfs) Write(path string, buff []byte, ofst int64, fh uint64) int {
 		fs.lock.Unlock()
 		return -fuse.ENOENT
 	}
-
-	filesize := int64(len(file.data))
-	endofst := ofst + int64(len(buff))
 	fs.lock.Unlock()
 
+	endofst := ofst + int64(len(buff))
+
 	file.lock.Lock()
+	filesize := int64(len(file.data))
 	if endofst > filesize {
 		file.data = append(file.data, make([]byte, endofst-filesize)...)
 	}
 
 	bytesWrite := copy(file.data[ofst:endofst], buff)
+	if !file.load.isReady(ofst, endofst) {
+		file.load.addRange(ofst, endofst)
+	}
 	file.mtim = time.Now()
 	file.dirty = true
 	file.lock.Unlock()
@@ -719,6 +742,7 @@ func (fs *Dsfs) ApplyLiveTx(pathBytes []byte, tx Tx) error {
 	filesize := int64(len(file.data))
 	if tx.Size < filesize {
 		file.data = file.data[:tx.Size]
+		file.load.truncate(tx.Size)
 	} else if tx.Size > filesize {
 		file.data = append(file.data, make([]byte, tx.Size-filesize)...)
 	}
@@ -754,6 +778,9 @@ func (fs *Dsfs) ApplyLiveTx(pathBytes []byte, tx Tx) error {
 
 		file.lock.Lock()
 		copy(file.data[ofst:ofst+n], buffer)
+		if !file.load.isReady(int64(ofst), int64(ofst+n)) {
+			file.load.addRange(int64(ofst), int64(ofst+n))
+		}
 		file.lock.Unlock()
 	}
 

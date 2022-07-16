@@ -5,6 +5,8 @@ const (
 	DataChannelName          = "data"
 	MaxDiscordFileSize       = 8388119
 	MaxDiscordMessageRequest = 100
+	PollInterval             = 250
+	MaxRetries               = 20
 )
 
 const (
