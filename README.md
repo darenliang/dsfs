@@ -16,6 +16,8 @@ details: [FUSEing for fun](https://www.darenliang.com/posts/fuseing-for-fun)
 
 ## Building
 
+Go 1.18+ is required due to the use of generics.
+
 ### Windows cgo
 
 Prerequisites: [WinFsp](https://github.com/winfsp/winfsp),

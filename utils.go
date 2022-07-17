@@ -1,6 +1,7 @@
 package main
 
 import (
+	"golang.org/x/exp/slices"
 	"path/filepath"
 	"strings"
 )
@@ -18,40 +19,56 @@ type Load struct {
 	ranges []Range
 }
 
+// sortRanges sorts ranges by start index
+// This uses generics for faster sorting performance so go 1.18+ is required
+func (load *Load) sortRanges() {
+	slices.SortFunc(load.ranges, func(a, b Range) bool {
+		return a.start < b.start
+	})
+}
+
+// addRange adds a new range
 func (load *Load) addRange(start, end int64) {
 	load.ranges = append(load.ranges, Range{start, end})
 }
 
-func (load *Load) truncate(end int64) {
-	var newRanges []Range
-	for _, v := range load.ranges {
-		if v.start >= end {
-			continue
-		}
-		if v.end > end {
-			newRanges = append(newRanges, Range{v.start, end})
-			continue
-		}
-		newRanges = append(newRanges, v)
-	}
-	load.ranges = newRanges
+// removeRange removes a range at index
+func (load *Load) removeRange(i int) {
+	last := len(load.ranges) - 1
+	load.ranges[i] = load.ranges[last]
+	load.ranges = load.ranges[:last]
 }
 
-func (load *Load) isReady(start, end int64) bool {
-	for i := start; i < end; i++ {
-		seen := false
-		for _, v := range load.ranges {
-			if v.start <= i && i < v.end {
-				seen = true
-				i = v.end - 1
-				break
-			}
-		}
-		if !seen {
-			return false
+// truncate trims all ranges that are over end
+// Does not preserve range orders at the benefit of speed
+func (load *Load) truncate(end int64) {
+	for i, v := range load.ranges {
+		if v.start >= end {
+			load.removeRange(i)
+		} else if v.end > end {
+			load.ranges[i].end = end
 		}
 	}
-	return true
+}
+
+// isReady determines if range start, end is covered
+// This function is optimized to satisfy O(n log n) time with O(1) space
+func (load *Load) isReady(start, end int64) bool {
+	load.sortRanges()
+
+	for _, v := range load.ranges {
+		if v.start > start {
+			return false
+		} else if v.end+1 > start {
+			if v.end < end {
+				start = v.end + 1
+			} else {
+				return true
+			}
+		}
+	}
+
+	return false
 }
 
 func newLoad() *Load {
