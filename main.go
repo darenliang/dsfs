@@ -22,7 +22,7 @@ var (
 	dsfs *Dsfs
 )
 
-func init() {
+func main() {
 	flag.StringVar(&token, "t", "", "Bot Token")
 	flag.StringVar(&guildID, "s", "", "Guild ID")
 	flag.StringVar(&mount, "m", "", "Mount point")
@@ -30,9 +30,7 @@ func init() {
 	flag.BoolVar(&debug, "d", false, "Enable pprof and print debug logs")
 	flag.Var(&options, "o", "FUSE options")
 	flag.Parse()
-}
 
-func main() {
 	zapLogger, _ := zap.NewDevelopment()
 	if debug {
 		logger = zapLogger.Sugar()

@@ -451,21 +451,21 @@ func (fs *Dsfs) Read(path string, buff []byte, ofst int64, fh uint64) int {
 	}
 	fs.lock.Unlock()
 
-	endofst := ofst + int64(len(buff))
-	newEndofst := endofst
+	buffLen := int64(len(buff))
+	var bytesReady int64
 	retries := 0
 
 	file.lock.RLock()
 	for {
 		filesize := int64(len(file.data))
-		if endofst > filesize {
-			newEndofst = filesize
-		}
-		if newEndofst < ofst {
-			file.lock.RUnlock()
-			return 0
-		}
-		if file.load.isReady(ofst, newEndofst) {
+		bytesReady = file.load.bytesReady(ofst)
+		if bytesReady > 0 {
+			if bytesReady > buffLen {
+				bytesReady = buffLen
+			}
+			if ofst+bytesReady > filesize {
+				bytesReady = filesize - ofst
+			}
 			break
 		}
 		if retries >= MaxRetries {
@@ -478,7 +478,7 @@ func (fs *Dsfs) Read(path string, buff []byte, ofst int64, fh uint64) int {
 		file.lock.RLock()
 	}
 
-	bytesRead := copy(buff, file.data[ofst:newEndofst])
+	bytesRead := copy(buff, file.data[ofst:ofst+bytesReady])
 	file.lock.RUnlock()
 
 	return bytesRead

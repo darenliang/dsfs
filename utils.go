@@ -51,7 +51,7 @@ func (load *Load) truncate(end int64) {
 	}
 }
 
-// isReady determines if range start, end is covered
+// isReady determines if range [start, end) is covered
 // This function is optimized to satisfy O(n log n) time with O(1) space
 func (load *Load) isReady(start, end int64) bool {
 	load.sortRanges()
@@ -59,9 +59,9 @@ func (load *Load) isReady(start, end int64) bool {
 	for _, v := range load.ranges {
 		if v.start > start {
 			return false
-		} else if v.end+1 > start {
+		} else if v.end > start {
 			if v.end < end {
-				start = v.end + 1
+				start = v.end
 			} else {
 				return true
 			}
@@ -69,6 +69,24 @@ func (load *Load) isReady(start, end int64) bool {
 	}
 
 	return false
+}
+
+// bytesReady determines the maximum number of bytes ready given start
+// This function is optimized to satisfy O(n log n) time with O(1) space
+func (load *Load) bytesReady(start int64) int64 {
+	load.sortRanges()
+
+	ptr := start
+	for _, v := range load.ranges {
+		if v.start > ptr {
+			break
+		}
+		if v.end >= ptr {
+			ptr = v.end
+		}
+	}
+
+	return ptr - start
 }
 
 func newLoad() *Load {
