@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"encoding/json"
 	"errors"
 	"github.com/bwmarrin/discordgo"
 	"github.com/hashicorp/go-immutable-radix"

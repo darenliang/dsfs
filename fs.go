@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"crypto/sha1"
 	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"github.com/bwmarrin/discordgo"
 	"github.com/darenliang/dsfs/fuse"

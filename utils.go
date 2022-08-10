@@ -1,10 +1,13 @@
 package main
 
 import (
+	jsoniter "github.com/json-iterator/go"
 	"golang.org/x/exp/slices"
 	"path/filepath"
 	"strings"
 )
+
+var json = jsoniter.ConfigCompatibleWithStandardLibrary
 
 func getDir(path string) string {
 	// Handle weirdness with Windows
