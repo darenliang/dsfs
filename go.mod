@@ -3,12 +3,12 @@ module github.com/darenliang/dsfs
 go 1.18
 
 require (
-	github.com/bwmarrin/discordgo v0.26.0
+	github.com/bwmarrin/discordgo v0.26.1
 	github.com/hashicorp/go-immutable-radix v1.3.1
 	github.com/json-iterator/go v1.1.12
 	go.uber.org/atomic v1.10.0
-	go.uber.org/zap v1.22.0
-	golang.org/x/exp v0.0.0-20220722155223-a9213eeb770e
+	go.uber.org/zap v1.23.0
+	golang.org/x/exp v0.0.0-20220915210609-840b3808d824
 )
 
 require (
@@ -18,5 +18,5 @@ require (
 	github.com/modern-go/reflect2 v1.0.2 // indirect
 	go.uber.org/multierr v1.6.0 // indirect
 	golang.org/x/crypto v0.0.0-20210421170649-83a5a9bb288b // indirect
-	golang.org/x/sys v0.0.0-20211019181941-9d821ace8654 // indirect
+	golang.org/x/sys v0.0.0-20220722155257-8c9f86f7a55f // indirect
 )

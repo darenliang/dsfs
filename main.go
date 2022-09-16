@@ -10,20 +10,23 @@ import (
 )
 
 var (
-	token   string
-	guildID string
-	mount   string
-	compact bool
-	debug   bool
-	options fuseOpts
-	logger  *zap.SugaredLogger
+	token         string
+	userToken     bool
+	guildID       string
+	mount         string
+	compact       bool
+	debug         bool
+	options       fuseOpts
+	logger        *zap.SugaredLogger
+	requiredFlags = []string{"t", "s"}
 	// We need to jankily expose the db and dsfs for messageCreate
 	db   *DB
 	dsfs *Dsfs
 )
 
 func main() {
-	flag.StringVar(&token, "t", "", "Bot Token")
+	flag.StringVar(&token, "t", "", "Token")
+	flag.BoolVar(&userToken, "u", false, "Token is a user token")
 	flag.StringVar(&guildID, "s", "", "Guild ID")
 	flag.StringVar(&mount, "m", "", "Mount point")
 	flag.BoolVar(&compact, "c", false, "Compact transactions")
@@ -44,7 +47,21 @@ func main() {
 	}
 	defer zapLogger.Sync()
 
-	dg, err := discordgo.New("Bot " + token)
+	seen := make(map[string]bool)
+	flag.Visit(func(f *flag.Flag) { seen[f.Name] = true })
+	for _, requiredFlag := range requiredFlags {
+		if !seen[requiredFlag] {
+			logger.Errorf("missing required -%s argument", requiredFlag)
+			return
+		}
+	}
+
+	var tokenPrefix string
+	if !userToken {
+		tokenPrefix = "Bot "
+	}
+
+	dg, err := discordgo.New(tokenPrefix + token)
 	if err != nil {
 		logger.Error("error creating Discord session,", err)
 		return
