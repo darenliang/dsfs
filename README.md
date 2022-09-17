@@ -64,6 +64,12 @@ To run:
 dsfs -t <Bot token> -s <Server ID> -m <Mount point>
 ```
 
+To run with user token:
+
+```bash
+dsfs -t <Bot token> -s <Server ID> -m <Mount point> -u
+```
+
 To run with transaction compaction:
 
 ```bash
