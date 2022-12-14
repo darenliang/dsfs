@@ -7,8 +7,8 @@ require (
 	github.com/hashicorp/go-immutable-radix v1.3.1
 	github.com/json-iterator/go v1.1.12
 	go.uber.org/atomic v1.10.0
-	go.uber.org/zap v1.23.0
-	golang.org/x/exp v0.0.0-20220915210609-840b3808d824
+	go.uber.org/zap v1.24.0
+	golang.org/x/exp v0.0.0-20221212164502-fae10dda9338
 )
 
 require (
@@ -18,5 +18,5 @@ require (
 	github.com/modern-go/reflect2 v1.0.2 // indirect
 	go.uber.org/multierr v1.6.0 // indirect
 	golang.org/x/crypto v0.0.0-20210421170649-83a5a9bb288b // indirect
-	golang.org/x/sys v0.0.0-20220722155257-8c9f86f7a55f // indirect
+	golang.org/x/sys v0.1.0 // indirect
 )

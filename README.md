@@ -11,6 +11,8 @@ Files are backed on Discord with a very primitive append-only filesystem.
 This is considered pre-alpha software and there will be bugs pertaining to
 synchronization and functionality.
 
+![Demo](demo.gif)
+
 Here is a blog post going over some of the implementation
 details: [FUSEing for fun](https://www.darenliang.com/posts/fuseing-for-fun)
 
@@ -82,8 +84,13 @@ To run with FUSE options:
 dsfs -t <Bot token> -s <Server ID> -m <Mount point> -o <FUSE option>
 ```
 
-## Additional features to consider
+## Common fixes to issues
 
-- Fast folder rename
-- Connection pooling
-- Buffer to hard disk instead of memory
+- If you are using a bot token, you must allow the Message Content Intent for
+  your bot in the [Discord Developer Portal](https://discord.com/developers/applications).
+- If you are having problems with realtime file synchronization, make sure you
+  are using a different token for each instance of dsfs.
+- If you are experiencing slow startup times, try using the `-c` flag to
+  compact transactions.
+- If you are using Windows and encountering errors with FUSE, try
+  updating [WinFsp](https://github.com/winfsp/winfsp) to the latest version.
