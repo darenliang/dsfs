@@ -120,12 +120,11 @@ func (fs *Dsfs) Open(path string, flags int) (int, uint64) {
 		return 0, 1
 	}
 
-	val, ok := fs.db.radix.Get([]byte(path))
+	tx, ok := fs.db.radix.Get([]byte(path))
 	if !ok {
 		fs.lock.Unlock()
 		return -fuse.EEXIST, ^uint64(0)
 	}
-	tx := val.(Tx)
 
 	if tx.Type == FolderType {
 		fs.lock.Unlock()
@@ -210,7 +209,7 @@ func (fs *Dsfs) Unlink(path string) int {
 	fs.lock.Lock()
 
 	pathBytes := []byte(path)
-	val, ok := fs.db.radix.Get(pathBytes)
+	tx, ok := fs.db.radix.Get(pathBytes)
 	if !ok {
 		// If only found in mem, just drop the file data
 		if _, ok := fs.open[path]; ok {
@@ -221,7 +220,6 @@ func (fs *Dsfs) Unlink(path string) int {
 		fs.lock.Unlock()
 		return -fuse.ENOENT
 	}
-	tx := val.(Tx)
 	if tx.Type == FolderType {
 		fs.lock.Unlock()
 		return -fuse.EISDIR
@@ -248,12 +246,11 @@ func (fs *Dsfs) Rmdir(path string) int {
 	fs.lock.Lock()
 
 	pathBytes := []byte(path)
-	val, ok := fs.db.radix.Get(pathBytes)
+	tx, ok := fs.db.radix.Get(pathBytes)
 	if !ok {
 		fs.lock.Unlock()
 		return -fuse.ENOENT
 	}
-	tx := val.(Tx)
 	if tx.Type != FolderType {
 		fs.lock.Unlock()
 		return -fuse.ENOTDIR
@@ -296,7 +293,7 @@ func (fs *Dsfs) Rename(oldpath string, newpath string) int {
 
 	oldpathBytes := []byte(oldpath)
 	newpathBytes := []byte(newpath)
-	val, ok := fs.db.radix.Get(oldpathBytes)
+	tx, ok := fs.db.radix.Get(oldpathBytes)
 	if !ok {
 		// If only found in mem, just rename the file directly
 		if val, ok := fs.open[oldpath]; ok {
@@ -308,8 +305,6 @@ func (fs *Dsfs) Rename(oldpath string, newpath string) int {
 		fs.lock.Unlock()
 		return -fuse.ENOENT
 	}
-	tx := val.(Tx)
-
 	if tx.Type == FolderType {
 		// The same hacky way used for Rmdir.
 		// It's pretty sad that renames won't work because paths are hardcoded.
@@ -383,13 +378,11 @@ func (fs *Dsfs) Getattr(path string, stat *fuse.Stat_t, fh uint64) int {
 		return 0
 	}
 
-	val, ok := fs.db.radix.Get([]byte(path))
+	tx, ok := fs.db.radix.Get([]byte(path))
 	if !ok {
 		return -fuse.ENOENT
 	}
-	tx := val.(Tx)
 	if tx.Type == FileType {
-		tx := val.(Tx)
 		stat.Mode = fuse.S_IFREG | 0777
 		stat.Size = tx.Size
 		stat.Ctim = fuse.NewTimespec(tx.Ctim)
@@ -539,7 +532,7 @@ func (fs *Dsfs) Release(path string, fh uint64) int {
 	}
 
 	pathBytes := []byte(path)
-	val, overwrite := fs.db.radix.Get(pathBytes)
+	oldTx, overwrite := fs.db.radix.Get(pathBytes)
 
 	tx := Tx{
 		Tx:      WriteTx,
@@ -609,7 +602,6 @@ func (fs *Dsfs) Release(path string, fh uint64) int {
 		// Dump data selectively based on checksum
 		// or if checksum doesn't exist dump all data
 		if overwrite {
-			oldTx := val.(Tx)
 			for i := 0; i < end; i++ {
 				fileID, checksum := "", ""
 				if i < len(oldTx.Checksums) {
@@ -670,7 +662,7 @@ func (fs *Dsfs) Readdir(
 	fill("..", nil, 0)
 	it := fs.db.radix.Root().Iterator()
 	it.SeekPrefix([]byte(path))
-	for key, val, ok := it.Next(); ok; key, val, ok = it.Next() {
+	for key, tx, ok := it.Next(); ok; key, tx, ok = it.Next() {
 		subpath := string(key)
 		// File is already open
 		if _, ok := fs.open[subpath]; ok {
@@ -680,7 +672,6 @@ func (fs *Dsfs) Readdir(
 			continue
 		}
 		name := filepath.Base(subpath)
-		tx := val.(Tx)
 		if tx.Type == FileType {
 			fill(name, &fuse.Stat_t{
 				Mode: fuse.S_IFREG | 0777,

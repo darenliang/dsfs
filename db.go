@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"github.com/bwmarrin/discordgo"
-	"github.com/hashicorp/go-immutable-radix"
+	"github.com/hashicorp/go-immutable-radix/v2"
 	"go.uber.org/atomic"
 	"io"
 )
@@ -14,7 +14,7 @@ var (
 )
 
 type DB struct {
-	radix *iradix.Tree
+	radix *iradix.Tree[Tx]
 }
 
 // setupDB setups the in-mem database
@@ -54,7 +54,7 @@ func setupDB(dg *discordgo.Session, guildID string) (*DB, error) {
 	TxChannelID = channelMap[TxChannelName].ID
 
 	db := &DB{
-		radix: iradix.New(),
+		radix: iradix.New[Tx](),
 	}
 	channel := channelMap[TxChannelName]
 

@@ -61,6 +61,10 @@ func main() {
 		tokenPrefix = "Bot "
 	}
 
+	if token == "" {
+		logger.Error("missing token")
+		return
+	}
 	dg, err := discordgo.New(tokenPrefix + token)
 	if err != nil {
 		logger.Error("error creating Discord session,", err)
@@ -76,6 +80,10 @@ func main() {
 		return
 	}
 
+	if guildID == "" {
+		logger.Error("missing guild ID")
+		return
+	}
 	db, err = setupDB(dg, guildID)
 	if err != nil {
 		logger.Error(err)

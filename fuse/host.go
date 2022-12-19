@@ -623,10 +623,10 @@ func (host *FileSystemHost) SetCapDeleteAccess(value bool) {
 // Many of the mount options in opts are specific to the underlying FUSE implementation.
 // Some of the common options include:
 //
-//     -h   --help            print help
-//     -V   --version         print FUSE version
-//     -d   -o debug          enable FUSE debug output
-//     -s                     disable multi-threaded operation
+//	-h   --help            print help
+//	-V   --version         print FUSE version
+//	-d   -o debug          enable FUSE debug output
+//	-s                     disable multi-threaded operation
 //
 // Please refer to the individual FUSE implementation documentation for additional options.
 //
@@ -836,49 +836,48 @@ func optNormStr(opt string) string {
 //
 // For pointer to bool types:
 //
-//     -x                       Match -x without parameter.
-//     -foo --foo               As above for -foo or --foo.
-//     foo                      Match "-o foo".
-//     -x= -foo= --foo= foo=    Match option with parameter.
-//     -x=%VERB ... foo=%VERB   Match option with parameter of syntax.
-//                              Allowed verbs: d,o,x,X,v
-//                              - d,o,x,X: set to true if parameter non-0.
-//                              - v: set to true if parameter present.
+//	-x                       Match -x without parameter.
+//	-foo --foo               As above for -foo or --foo.
+//	foo                      Match "-o foo".
+//	-x= -foo= --foo= foo=    Match option with parameter.
+//	-x=%VERB ... foo=%VERB   Match option with parameter of syntax.
+//	                         Allowed verbs: d,o,x,X,v
+//	                         - d,o,x,X: set to true if parameter non-0.
+//	                         - v: set to true if parameter present.
 //
-//     The formats -x=, and -x=%v are equivalent.
+//	The formats -x=, and -x=%v are equivalent.
 //
 // For pointer to other types:
 //
-//     -x                       Match -x with parameter (-x=PARAM).
-//     -foo --foo               As above for -foo or --foo.
-//     foo                      Match "-o foo=PARAM".
-//     -x= -foo= --foo= foo=    Match option with parameter.
-//     -x=%VERB ... foo=%VERB   Match option with parameter of syntax.
-//                              Allowed verbs for pointer to int types: d,o,x,X,v
-//                              Allowed verbs for pointer to string types: s,v
+//	-x                       Match -x with parameter (-x=PARAM).
+//	-foo --foo               As above for -foo or --foo.
+//	foo                      Match "-o foo=PARAM".
+//	-x= -foo= --foo= foo=    Match option with parameter.
+//	-x=%VERB ... foo=%VERB   Match option with parameter of syntax.
+//	                         Allowed verbs for pointer to int types: d,o,x,X,v
+//	                         Allowed verbs for pointer to string types: s,v
 //
-//     The formats -x, -x=, and -x=%v are equivalent.
+//	The formats -x, -x=, and -x=%v are equivalent.
 //
 // For example:
 //
-//     var f bool
-//     var set_attr_timeout bool
-//     var attr_timeout int
-//     var umask uint32
-//     outargs, err := OptParse(args, "-f attr_timeout= attr_timeout umask=%o",
-//         &f, &set_attr_timeout, &attr_timeout, &umask)
+//	var f bool
+//	var set_attr_timeout bool
+//	var attr_timeout int
+//	var umask uint32
+//	outargs, err := OptParse(args, "-f attr_timeout= attr_timeout umask=%o",
+//	    &f, &set_attr_timeout, &attr_timeout, &umask)
 //
 // Will accept a command line of:
 //
-//     $ program -f -o attr_timeout=42,umask=077
+//	$ program -f -o attr_timeout=42,umask=077
 //
 // And will set variables as follows:
 //
-//     f == true
-//     set_attr_timeout == true
-//     attr_timeout == 42
-//     umask == 077
-//
+//	f == true
+//	set_attr_timeout == true
+//	attr_timeout == 42
+//	umask == 077
 func OptParse(args []string, format string, vals ...interface{}) (outargs []string, err error) {
 	if 0 == c_hostFuseInit() {
 		if "windows" == runtime.GOOS {
