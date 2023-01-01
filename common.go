@@ -20,6 +20,7 @@ const (
 )
 
 var (
+	UniqueID      string
 	DataChannelID string
 	TxChannelID   string
 )

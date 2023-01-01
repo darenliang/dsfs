@@ -15,10 +15,11 @@ import (
 
 type Dsfs struct {
 	fuse.FileSystemBase
-	dg   *discordgo.Session
-	db   *DB
-	open map[string]*FileData
-	lock sync.Mutex
+	dg     *discordgo.Session
+	db     *DB
+	writer Writer
+	open   map[string]*FileData
+	lock   sync.Mutex
 }
 
 type FileData struct {
@@ -31,10 +32,11 @@ type FileData struct {
 	dirty   bool
 }
 
-func NewDsfs(dg *discordgo.Session, db *DB) *Dsfs {
+func NewDsfs(dg *discordgo.Session, db *DB, writer Writer) *Dsfs {
 	dsfs := Dsfs{}
 	dsfs.dg = dg
 	dsfs.db = db
+	dsfs.writer = writer
 	dsfs.open = make(map[string]*FileData)
 	return &dsfs
 }
@@ -102,7 +104,7 @@ func (fs *Dsfs) Mkdir(path string, mode uint32) int {
 	if len(b) > MaxDiscordFileSize {
 		return -fuse.EACCES
 	}
-	_, err := fs.dg.ChannelFileSend(TxChannelID, TxChannelName, bytes.NewReader(b))
+	_, err := fs.writer.Send(TxChannelID, TxChannelName, bytes.NewReader(b))
 	if err != nil {
 		return -fuse.EACCES
 	}
@@ -233,7 +235,7 @@ func (fs *Dsfs) Unlink(path string) int {
 	if len(b) > MaxDiscordFileSize {
 		return -fuse.EACCES
 	}
-	_, err := fs.dg.ChannelFileSend(TxChannelID, TxChannelName, bytes.NewReader(b))
+	_, err := fs.writer.Send(TxChannelID, TxChannelName, bytes.NewReader(b))
 	if err != nil {
 		return -fuse.EACCES
 	}
@@ -272,7 +274,7 @@ func (fs *Dsfs) Rmdir(path string) int {
 	if len(b) > MaxDiscordFileSize {
 		return -fuse.EACCES
 	}
-	_, err := fs.dg.ChannelFileSend(TxChannelID, TxChannelName, bytes.NewReader(b))
+	_, err := fs.writer.Send(TxChannelID, TxChannelName, bytes.NewReader(b))
 	if err != nil {
 		return -fuse.EACCES
 	}
@@ -339,16 +341,16 @@ func (fs *Dsfs) Rename(oldpath string, newpath string) int {
 	}
 
 	if len(writeTxBytes)+len(deleteTxBytes) > MaxDiscordFileSize {
-		_, err := fs.dg.ChannelFileSend(TxChannelID, TxChannelName, bytes.NewReader(writeTxBytes))
+		_, err := fs.writer.Send(TxChannelID, TxChannelName, bytes.NewReader(writeTxBytes))
 		if err != nil {
 			return -fuse.EACCES
 		}
-		_, err = fs.dg.ChannelFileSend(TxChannelID, TxChannelName, bytes.NewReader(deleteTxBytes))
+		_, err = fs.writer.Send(TxChannelID, TxChannelName, bytes.NewReader(deleteTxBytes))
 		if err != nil {
 			return -fuse.EACCES
 		}
 	} else {
-		_, err := fs.dg.ChannelFileSend(
+		_, err := fs.writer.Send(
 			TxChannelID, TxChannelName,
 			bytes.NewReader(append(append(writeTxBytes, '\n'), deleteTxBytes...)),
 		)
@@ -585,7 +587,7 @@ func (fs *Dsfs) Release(path string, fh uint64) int {
 			}
 			file.lock.RUnlock()
 
-			msg, err := fs.dg.ChannelFileSend(DataChannelID, DataChannelName, bytes.NewReader(buffer))
+			msg, err := fs.writer.Send(DataChannelID, DataChannelName, bytes.NewReader(buffer))
 			if err != nil {
 				return err
 			}
@@ -626,7 +628,7 @@ func (fs *Dsfs) Release(path string, fh uint64) int {
 		if len(b) > MaxDiscordFileSize {
 			return
 		}
-		_, err := fs.dg.ChannelFileSend(TxChannelID, TxChannelName, bytes.NewReader(b))
+		_, err := fs.writer.Send(TxChannelID, TxChannelName, bytes.NewReader(b))
 		if err != nil {
 			return
 		}

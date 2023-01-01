@@ -15,13 +15,15 @@ var (
 	guildID       string
 	mount         string
 	compact       bool
+	webhook       bool
 	debug         bool
 	options       fuseOpts
 	logger        *zap.SugaredLogger
 	requiredFlags = []string{"t", "s"}
-	// We need to jankily expose the db and dsfs for messageCreate
-	db   *DB
-	dsfs *Dsfs
+	// We need to jankily expose the db and dsfs for messageCreate and writer for webhooksUpdate
+	db     *DB
+	writer Writer
+	dsfs   *Dsfs
 )
 
 func main() {
@@ -30,6 +32,7 @@ func main() {
 	flag.StringVar(&guildID, "s", "", "Guild ID")
 	flag.StringVar(&mount, "m", "", "Mount point")
 	flag.BoolVar(&compact, "c", false, "Compact transactions")
+	flag.BoolVar(&webhook, "w", false, "Use experimental webhooks")
 	flag.BoolVar(&debug, "d", false, "Enable pprof and print debug logs")
 	flag.Var(&options, "o", "FUSE options")
 	flag.Parse()
@@ -61,10 +64,6 @@ func main() {
 		tokenPrefix = "Bot "
 	}
 
-	if token == "" {
-		logger.Error("missing token")
-		return
-	}
 	dg, err := discordgo.New(tokenPrefix + token)
 	if err != nil {
 		logger.Error("error creating Discord session,", err)
@@ -72,7 +71,8 @@ func main() {
 	}
 
 	dg.AddHandler(messageCreate)
-	dg.Identify.Intents = discordgo.IntentsGuildMessages
+	dg.AddHandler(webhooksUpdate)
+	dg.Identify.Intents = discordgo.IntentsGuildMessages | discordgo.IntentGuildWebhooks
 
 	err = dg.Open()
 	if err != nil {
@@ -80,17 +80,20 @@ func main() {
 		return
 	}
 
-	if guildID == "" {
-		logger.Error("missing guild ID")
-		return
-	}
+	// TODO: there are side effects that are preferably avoided
 	db, err = setupDB(dg, guildID)
 	if err != nil {
 		logger.Error(err)
 		return
 	}
 
-	dsfs = NewDsfs(dg, db)
+	writer, err = setupWriter(dg, webhook)
+	if err != nil {
+		logger.Error(err)
+		return
+	}
+
+	dsfs = NewDsfs(dg, db, writer)
 	host := fuse.NewFileSystemHost(dsfs)
 	host.SetCapReaddirPlus(true)
 	host.Mount(mount, options.Args())

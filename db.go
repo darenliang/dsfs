@@ -10,7 +10,7 @@ import (
 )
 
 var (
-	txReady = atomic.NewBool(false)
+	dbReady = atomic.NewBool(false)
 )
 
 type DB struct {
@@ -21,7 +21,7 @@ type DB struct {
 // This function needs to be refactored; it looks really gross in its current
 // state.
 func setupDB(dg *discordgo.Session, guildID string) (*DB, error) {
-	defer txReady.Store(true)
+	defer dbReady.Store(true)
 
 	channels, err := dg.GuildChannels(guildID)
 	if err != nil {

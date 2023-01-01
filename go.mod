@@ -4,6 +4,7 @@ go 1.18
 
 require (
 	github.com/bwmarrin/discordgo v0.26.1
+	github.com/google/uuid v1.3.0
 	github.com/hashicorp/go-immutable-radix/v2 v2.0.0
 	github.com/json-iterator/go v1.1.12
 	go.uber.org/atomic v1.10.0

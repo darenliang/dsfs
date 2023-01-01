@@ -107,12 +107,17 @@ func applyMessageTxs(db *DB, ms []*discordgo.Message, buffer *bytes.Buffer, live
 
 func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 	// Not ready to accept TXs
-	if !txReady.Load() {
+	if !dbReady.Load() {
 		return
 	}
 
 	// Don't handle the bot's own TXs or listen to a non-TX channel
 	if m.Author.ID == s.State.User.ID {
+		return
+	}
+
+	logger.Info(m.Author.Username)
+	if m.Author.Username == UniqueID {
 		return
 	}
 
