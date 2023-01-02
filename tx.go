@@ -5,9 +5,8 @@ import (
 	"bytes"
 	"fmt"
 	"github.com/bwmarrin/discordgo"
+	"github.com/valyala/fasthttp"
 	"go.uber.org/zap"
-	"io"
-	"net/http"
 	"time"
 )
 
@@ -24,15 +23,17 @@ type Tx struct {
 
 // getDataFile downloads an attachment and writes to buffer
 func getDataFile(channelID string, fileID string, buffer []byte) (int, error) {
-	resp, err := http.Get(fmt.Sprintf("https://cdn.discordapp.com/attachments/%s/%s/%s", channelID, fileID, DataChannelName))
+	req := fasthttp.AcquireRequest()
+	req.SetRequestURI(fmt.Sprintf("https://cdn.discordapp.com/attachments/%s/%s/%s", channelID, fileID, DataChannelName))
+	req.Header.SetMethod(fasthttp.MethodGet)
+	resp := fasthttp.AcquireResponse()
+	err := fasthttp.Do(req, resp)
+	fasthttp.ReleaseRequest(req)
 	if err != nil {
 		return 0, err
 	}
-	defer resp.Body.Close()
-	n, err := io.ReadFull(resp.Body, buffer)
-	if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
-		return 0, err
-	}
+	n := copy(buffer, resp.Body())
+	fasthttp.ReleaseResponse(resp)
 	return n, nil
 }
 
@@ -46,13 +47,14 @@ func applyMessageTxs(db DB, ms []*discordgo.Message, buffer *bytes.Buffer, live 
 	zap.S().Infof("applying %d messages with TXs", len(ms))
 	for _, m := range ms {
 		for _, file := range m.Attachments {
-			resp, err := http.Get(file.URL)
+			_, data, err := fasthttp.Get(nil, file.URL)
 			if err != nil {
 				zap.S().Warnf("%s, skipping tx batch", err)
 				continue
 			}
 
-			scanner := bufio.NewScanner(resp.Body)
+			bytesReader := bytes.NewReader(data)
+			scanner := bufio.NewScanner(bytesReader)
 
 			for scanner.Scan() {
 				line := scanner.Text()
@@ -98,8 +100,6 @@ func applyMessageTxs(db DB, ms []*discordgo.Message, buffer *bytes.Buffer, live 
 					buffer.WriteByte('\n')
 				}
 			}
-
-			resp.Body.Close()
 		}
 	}
 	zap.S().Info("done applying TXs")
