@@ -17,11 +17,12 @@ type Tx struct {
 	Path      string    `json:"path"`
 	FileIDs   []string  `json:"ids,omitempty"`
 	Checksums []string  `json:"sums,omitempty"`
-	Tx        int       `json:"tx"`
-	Type      int       `json:"type,omitempty"`
+	Tx        TxType    `json:"tx"`
+	Type      InodeType `json:"type,omitempty"`
 	Size      int64     `json:"size,omitempty"`
 }
 
+// getDataFile downloads an attachment and writes to buffer
 func getDataFile(channelID string, fileID string, buffer []byte) (int, error) {
 	resp, err := http.Get(fmt.Sprintf("https://cdn.discordapp.com/attachments/%s/%s/%s", channelID, fileID, DataChannelName))
 	if err != nil {
@@ -35,10 +36,12 @@ func getDataFile(channelID string, fileID string, buffer []byte) (int, error) {
 	return n, nil
 }
 
+// createDeleteTx creates a delete transaction for path
 func createDeleteTx(path string) Tx {
 	return Tx{Tx: DeleteTx, Path: path}
 }
 
+// applyMessageTxs applies transactions to DB, and writes message data to buffer if a buffer is given
 func applyMessageTxs(db DB, ms []*discordgo.Message, buffer *bytes.Buffer, live bool) {
 	zap.S().Infof("applying %d messages with TXs", len(ms))
 	for _, m := range ms {
@@ -109,11 +112,7 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 	}
 
 	// Don't handle the bot's own TXs or listen to a non-TX channel
-	if m.Author.ID == s.State.User.ID {
-		return
-	}
-
-	if m.ChannelID != dsfs.txChannel.ID {
+	if m.Author.ID == s.State.User.ID || m.ChannelID != dsfs.txChannel.ID {
 		return
 	}
 

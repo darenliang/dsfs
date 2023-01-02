@@ -13,12 +13,16 @@ const (
 	QueueTimeout             = 5 * time.Second
 )
 
+type TxType int
+
 const (
-	WriteTx int = iota
+	WriteTx TxType = iota
 	DeleteTx
 )
 
+type InodeType int
+
 const (
-	FileType int = iota
+	FileType InodeType = iota
 	FolderType
 )

@@ -6,7 +6,8 @@ import (
 	"strings"
 )
 
-var json = jsoniter.ConfigCompatibleWithStandardLibrary
+// json uses json-iterator's json serializer for better performance
+var json = jsoniter.ConfigFastest
 
 func getDir(path string) string {
 	// Handle weirdness with Windows

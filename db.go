@@ -27,18 +27,22 @@ type RadixDB struct {
 	radix *iradix.Tree[*Tx]
 }
 
+// Get is used to lookup a specific key, returning the value and if it was found
 func (db *RadixDB) Get(key string) (*Tx, bool) {
 	return db.radix.Get([]byte(key))
 }
 
+// Insert is used to add or update a given key
 func (db *RadixDB) Insert(key string, value *Tx) {
 	db.radix, _, _ = db.radix.Insert([]byte(key), value)
 }
 
+// Delete is used to delete a given key
 func (db *RadixDB) Delete(key string) {
 	db.radix, _, _ = db.radix.Delete([]byte(key))
 }
 
+// Iterator returns an Iterator that filters by prefix
 func (db *RadixDB) Iterator(prefix string) Iterator {
 	iter := db.radix.Root().Iterator()
 	iter.SeekPrefix([]byte(prefix))
@@ -50,6 +54,7 @@ type RadixDBIterator struct {
 	iter *iradix.Iterator[*Tx]
 }
 
+// Next gets next iteration for iterator
 func (iter *RadixDBIterator) Next() (string, *Tx, bool) {
 	bytesKey, tx, ok := iter.iter.Next()
 	return string(bytesKey), tx, ok
@@ -186,6 +191,8 @@ func setupDB(dg *discordgo.Session, txChannel *discordgo.Channel, compact bool) 
 		if err != nil || len(b) == 0 {
 			break
 		}
+
+		// If message buffer overflows, flush the data
 		if len(messageBuffer)+len(b) > MaxDiscordFileSize {
 			msg, err := dg.ChannelFileSend(txChannel.ID, TxChannelName, bytes.NewReader(messageBuffer))
 			if err != nil {
@@ -214,6 +221,7 @@ func setupDB(dg *discordgo.Session, txChannel *discordgo.Channel, compact bool) 
 		}
 	}
 
+	// Pin new start point
 	if firstMsg != nil {
 		err := dg.ChannelMessagePin(txChannel.ID, firstMsg.ID)
 		if err != nil {
