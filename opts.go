@@ -2,18 +2,18 @@ package main
 
 import "fmt"
 
-type fuseOpts []string
+type FuseOpts []string
 
-func (opts *fuseOpts) String() string {
+func (opts *FuseOpts) String() string {
 	return fmt.Sprint(*opts)
 }
 
-func (opts *fuseOpts) Set(opt string) error {
+func (opts *FuseOpts) Set(opt string) error {
 	*opts = append(*opts, opt)
 	return nil
 }
 
-func (opts *fuseOpts) Args() []string {
+func (opts *FuseOpts) Args() []string {
 	var args []string
 	for _, arg := range *opts {
 		args = append(args, "-o", arg)

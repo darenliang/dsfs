@@ -8,6 +8,7 @@ import (
 	"github.com/bwmarrin/discordgo"
 	"github.com/darenliang/dsfs/fuse"
 	"go.uber.org/atomic"
+	"go.uber.org/zap"
 	"path/filepath"
 	"sync"
 	"time"
@@ -15,32 +16,36 @@ import (
 
 type Dsfs struct {
 	fuse.FileSystemBase
-	dg   *discordgo.Session
-	db   *DB
-	open map[string]*FileData
-	lock sync.Mutex
+	dg          *discordgo.Session
+	db          DB
+	txChannel   *discordgo.Channel
+	dataChannel *discordgo.Channel
+	open        map[string]*FileData
+	lock        sync.Mutex
 }
 
 type FileData struct {
 	mtim    time.Time
 	ctim    time.Time
 	syncing *atomic.Bool
-	data    []byte
 	load    *Load
+	data    []byte
 	lock    sync.RWMutex
 	dirty   bool
 }
 
-func NewDsfs(dg *discordgo.Session, db *DB) *Dsfs {
+func NewDsfs(dg *discordgo.Session, db DB, txChannel *discordgo.Channel, dataChannel *discordgo.Channel) *Dsfs {
 	dsfs := Dsfs{}
 	dsfs.dg = dg
 	dsfs.db = db
+	dsfs.txChannel = txChannel
+	dsfs.dataChannel = dataChannel
 	dsfs.open = make(map[string]*FileData)
 	return &dsfs
 }
 
 func (fs *Dsfs) Mknod(path string, mode uint32, dev uint64) int {
-	logger.Debugw("Mknod",
+	zap.S().Debugw("Mknod",
 		"path", path, "mode", mode, "dev", dev,
 	)
 	fs.lock.Lock()
@@ -52,12 +57,12 @@ func (fs *Dsfs) Mknod(path string, mode uint32, dev uint64) int {
 	}
 
 	// Check parent in db
-	if _, ok := fs.db.radix.Get([]byte(getDir(path))); !ok {
+	if _, ok := fs.db.Get(getDir(path)); !ok {
 		return -fuse.ENOENT
 	}
 
 	// Check file in db
-	if _, ok := fs.db.radix.Get([]byte(path)); ok {
+	if _, ok := fs.db.Get(path); ok {
 		return -fuse.EEXIST
 	}
 
@@ -73,36 +78,35 @@ func (fs *Dsfs) Mknod(path string, mode uint32, dev uint64) int {
 }
 
 func (fs *Dsfs) Mkdir(path string, mode uint32) int {
-	logger.Debugw("Mkdir", "path", path, "mode", mode)
+	zap.S().Debugw("Mkdir", "path", path, "mode", mode)
 	fs.lock.Lock()
 
-	pathBytes := []byte(path)
 	// Check parent in db
-	if _, ok := fs.db.radix.Get([]byte(getDir(path))); !ok {
+	if _, ok := fs.db.Get(getDir(path)); !ok {
 		fs.lock.Unlock()
 		return -fuse.ENOENT
 	}
 
 	// Check file in db
-	if _, ok := fs.db.radix.Get(pathBytes); ok {
+	if _, ok := fs.db.Get(path); ok {
 		fs.lock.Unlock()
 		return -fuse.EEXIST
 	}
 
 	// Make tx
-	tx := Tx{
+	tx := &Tx{
 		Tx:   WriteTx,
 		Path: path,
 		Type: FolderType,
 	}
-	fs.db.radix, _, _ = fs.db.radix.Insert(pathBytes, tx)
+	fs.db.Insert(path, tx)
 	fs.lock.Unlock()
 
 	b, _ := json.Marshal(tx)
 	if len(b) > MaxDiscordFileSize {
 		return -fuse.EACCES
 	}
-	_, err := fs.dg.ChannelFileSend(TxChannelID, TxChannelName, bytes.NewReader(b))
+	_, err := fs.dg.ChannelFileSend(fs.txChannel.ID, TxChannelName, bytes.NewReader(b))
 	if err != nil {
 		return -fuse.EACCES
 	}
@@ -111,7 +115,7 @@ func (fs *Dsfs) Mkdir(path string, mode uint32) int {
 }
 
 func (fs *Dsfs) Open(path string, flags int) (int, uint64) {
-	logger.Debugw("Open", "path", path, "flags", flags)
+	zap.S().Debugw("Open", "path", path, "flags", flags)
 	fs.lock.Lock()
 
 	// Check open map
@@ -120,7 +124,7 @@ func (fs *Dsfs) Open(path string, flags int) (int, uint64) {
 		return 0, 1
 	}
 
-	tx, ok := fs.db.radix.Get([]byte(path))
+	tx, ok := fs.db.Get(path)
 	if !ok {
 		fs.lock.Unlock()
 		return -fuse.EEXIST, ^uint64(0)
@@ -154,12 +158,12 @@ func (fs *Dsfs) Open(path string, flags int) (int, uint64) {
 			file, ok := fs.open[path]
 			if !ok {
 				err := errors.New("file no longer exists")
-				logger.Warn(err)
+				zap.S().Warn(err)
 				return err
 			}
-			n, err := getDataFile(DataChannelID, id, buffer)
+			n, err := getDataFile(fs.dataChannel.ID, id, buffer)
 			if err != nil {
-				logger.Warn("network error with Discord", err)
+				zap.S().Warn("network error with Discord", err)
 				return err
 			}
 			file.lock.Lock()
@@ -205,11 +209,10 @@ func (fs *Dsfs) Open(path string, flags int) (int, uint64) {
 }
 
 func (fs *Dsfs) Unlink(path string) int {
-	logger.Debugw("Unlink", "path", path)
+	zap.S().Debugw("Unlink", "path", path)
 	fs.lock.Lock()
 
-	pathBytes := []byte(path)
-	tx, ok := fs.db.radix.Get(pathBytes)
+	tx, ok := fs.db.Get(path)
 	if !ok {
 		// If only found in mem, just drop the file data
 		if _, ok := fs.open[path]; ok {
@@ -226,14 +229,14 @@ func (fs *Dsfs) Unlink(path string) int {
 	}
 
 	delete(fs.open, path)
-	fs.db.radix, _, _ = fs.db.radix.Delete(pathBytes)
+	fs.db.Delete(path)
 	fs.lock.Unlock()
 
 	b, _ := json.Marshal(createDeleteTx(path))
 	if len(b) > MaxDiscordFileSize {
 		return -fuse.EACCES
 	}
-	_, err := fs.dg.ChannelFileSend(TxChannelID, TxChannelName, bytes.NewReader(b))
+	_, err := fs.dg.ChannelFileSend(fs.txChannel.ID, TxChannelName, bytes.NewReader(b))
 	if err != nil {
 		return -fuse.EACCES
 	}
@@ -242,11 +245,10 @@ func (fs *Dsfs) Unlink(path string) int {
 }
 
 func (fs *Dsfs) Rmdir(path string) int {
-	logger.Debugw("Rmdir", "path", path)
+	zap.S().Debugw("Rmdir", "path", path)
 	fs.lock.Lock()
 
-	pathBytes := []byte(path)
-	tx, ok := fs.db.radix.Get(pathBytes)
+	tx, ok := fs.db.Get(path)
 	if !ok {
 		fs.lock.Unlock()
 		return -fuse.ENOENT
@@ -257,22 +259,21 @@ func (fs *Dsfs) Rmdir(path string) int {
 	}
 
 	// Hacky way to find if a folder is empty or not. Not well tested.
-	it := fs.db.radix.Root().Iterator()
-	it.SeekPrefix(pathBytes)
+	it := fs.db.Iterator(path)
 	for key, _, ok := it.Next(); ok; key, _, ok = it.Next() {
-		if !bytes.Equal(key, pathBytes) {
+		if key != path {
 			fs.lock.Unlock()
 			return -fuse.ENOTEMPTY
 		}
 	}
-	fs.db.radix, _, _ = fs.db.radix.Delete(pathBytes)
+	fs.db.Delete(path)
 	fs.lock.Unlock()
 
 	b, _ := json.Marshal(createDeleteTx(path))
 	if len(b) > MaxDiscordFileSize {
 		return -fuse.EACCES
 	}
-	_, err := fs.dg.ChannelFileSend(TxChannelID, TxChannelName, bytes.NewReader(b))
+	_, err := fs.dg.ChannelFileSend(fs.txChannel.ID, TxChannelName, bytes.NewReader(b))
 	if err != nil {
 		return -fuse.EACCES
 	}
@@ -281,19 +282,17 @@ func (fs *Dsfs) Rmdir(path string) int {
 }
 
 func (fs *Dsfs) Rename(oldpath string, newpath string) int {
-	logger.Debugw("Rename",
+	zap.S().Debugw("Rename",
 		"oldpath", oldpath, "newpath", newpath,
 	)
 	fs.lock.Lock()
 
-	if _, ok := fs.db.radix.Get([]byte(getDir(newpath))); !ok {
+	if _, ok := fs.db.Get(getDir(newpath)); !ok {
 		fs.lock.Unlock()
 		return -fuse.ENOENT
 	}
 
-	oldpathBytes := []byte(oldpath)
-	newpathBytes := []byte(newpath)
-	tx, ok := fs.db.radix.Get(oldpathBytes)
+	tx, ok := fs.db.Get(oldpath)
 	if !ok {
 		// If only found in mem, just rename the file directly
 		if val, ok := fs.open[oldpath]; ok {
@@ -311,10 +310,9 @@ func (fs *Dsfs) Rename(oldpath string, newpath string) int {
 		//
 		// Looking for a better solution that would eliminate the need of
 		// hardcoded paths.
-		it := fs.db.radix.Root().Iterator()
-		it.SeekPrefix(oldpathBytes)
+		it := fs.db.Iterator(oldpath)
 		for key, _, ok := it.Next(); ok; key, _, ok = it.Next() {
-			if !bytes.Equal(key, oldpathBytes) {
+			if key != oldpath {
 				fs.lock.Unlock()
 				return -fuse.ENOTEMPTY
 			}
@@ -339,17 +337,17 @@ func (fs *Dsfs) Rename(oldpath string, newpath string) int {
 	}
 
 	if len(writeTxBytes)+len(deleteTxBytes) > MaxDiscordFileSize {
-		_, err := fs.dg.ChannelFileSend(TxChannelID, TxChannelName, bytes.NewReader(writeTxBytes))
+		_, err := fs.dg.ChannelFileSend(fs.txChannel.ID, TxChannelName, bytes.NewReader(writeTxBytes))
 		if err != nil {
 			return -fuse.EACCES
 		}
-		_, err = fs.dg.ChannelFileSend(TxChannelID, TxChannelName, bytes.NewReader(deleteTxBytes))
+		_, err = fs.dg.ChannelFileSend(fs.txChannel.ID, TxChannelName, bytes.NewReader(deleteTxBytes))
 		if err != nil {
 			return -fuse.EACCES
 		}
 	} else {
 		_, err := fs.dg.ChannelFileSend(
-			TxChannelID, TxChannelName,
+			fs.txChannel.ID, TxChannelName,
 			bytes.NewReader(append(append(writeTxBytes, '\n'), deleteTxBytes...)),
 		)
 		if err != nil {
@@ -357,15 +355,15 @@ func (fs *Dsfs) Rename(oldpath string, newpath string) int {
 		}
 	}
 	fs.lock.Lock()
-	fs.db.radix, _, _ = fs.db.radix.Insert(newpathBytes, tx)
-	fs.db.radix, _, _ = fs.db.radix.Delete(oldpathBytes)
+	fs.db.Insert(newpath, tx)
+	fs.db.Delete(oldpath)
 	fs.lock.Unlock()
 
 	return 0
 }
 
 func (fs *Dsfs) Getattr(path string, stat *fuse.Stat_t, fh uint64) int {
-	logger.Debugw("Getattr", "path", path, "fh", fh)
+	zap.S().Debugw("Getattr", "path", path, "fh", fh)
 	fs.lock.Lock()
 	defer fs.lock.Unlock()
 
@@ -378,7 +376,7 @@ func (fs *Dsfs) Getattr(path string, stat *fuse.Stat_t, fh uint64) int {
 		return 0
 	}
 
-	tx, ok := fs.db.radix.Get([]byte(path))
+	tx, ok := fs.db.Get(path)
 	if !ok {
 		return -fuse.ENOENT
 	}
@@ -395,7 +393,7 @@ func (fs *Dsfs) Getattr(path string, stat *fuse.Stat_t, fh uint64) int {
 
 func (fs *Dsfs) Truncate(path string, size int64, fh uint64) int {
 	// Please note that Truncate only truncates in mem!
-	logger.Debugw("Truncate",
+	zap.S().Debugw("Truncate",
 		"path", path, "size", size, "fh", fh,
 	)
 	fs.lock.Lock()
@@ -428,7 +426,7 @@ func (fs *Dsfs) Truncate(path string, size int64, fh uint64) int {
 }
 
 func (fs *Dsfs) Read(path string, buff []byte, ofst int64, fh uint64) int {
-	logger.Debugw("Read",
+	zap.S().Debugw("Read",
 		"path", path,
 		"len(buff)", len(buff),
 		"ofst", ofst,
@@ -478,7 +476,7 @@ func (fs *Dsfs) Read(path string, buff []byte, ofst int64, fh uint64) int {
 
 func (fs *Dsfs) Write(path string, buff []byte, ofst int64, fh uint64) int {
 	// Please note that Write only writes to mem!
-	logger.Debugw("Write",
+	zap.S().Debugw("Write",
 		"path", path,
 		"len(buff)", len(buff),
 		"ofst", ofst,
@@ -516,7 +514,7 @@ func (fs *Dsfs) Release(path string, fh uint64) int {
 	// All open files are dumped to memory.
 	// When a file is closed and is "dirty" (aka modified), the entire file
 	// is flushed in the background.
-	logger.Debugw("Release", "path", path, "fh", fh)
+	zap.S().Debugw("Release", "path", path, "fh", fh)
 	fs.lock.Lock()
 
 	file, ok := fs.open[path]
@@ -531,10 +529,9 @@ func (fs *Dsfs) Release(path string, fh uint64) int {
 		return 0
 	}
 
-	pathBytes := []byte(path)
-	oldTx, overwrite := fs.db.radix.Get(pathBytes)
+	oldTx, overwrite := fs.db.Get(path)
 
-	tx := Tx{
+	tx := &Tx{
 		Tx:      WriteTx,
 		Path:    path,
 		Type:    FileType,
@@ -550,7 +547,7 @@ func (fs *Dsfs) Release(path string, fh uint64) int {
 		if file.syncing.Load() {
 			return
 		}
-		logger.Debugf("uploading %s in the background", path)
+		zap.S().Debugf("uploading %s in the background", path)
 		file.syncing.Store(true)
 		defer file.syncing.Store(false)
 		defer func() { file.dirty = false }()
@@ -585,7 +582,7 @@ func (fs *Dsfs) Release(path string, fh uint64) int {
 			}
 			file.lock.RUnlock()
 
-			msg, err := fs.dg.ChannelFileSend(DataChannelID, DataChannelName, bytes.NewReader(buffer))
+			msg, err := fs.dg.ChannelFileSend(fs.dataChannel.ID, DataChannelName, bytes.NewReader(buffer))
 			if err != nil {
 				return err
 			}
@@ -626,14 +623,14 @@ func (fs *Dsfs) Release(path string, fh uint64) int {
 		if len(b) > MaxDiscordFileSize {
 			return
 		}
-		_, err := fs.dg.ChannelFileSend(TxChannelID, TxChannelName, bytes.NewReader(b))
+		_, err := fs.dg.ChannelFileSend(fs.txChannel.ID, TxChannelName, bytes.NewReader(b))
 		if err != nil {
 			return
 		}
 		fs.lock.Lock()
-		fs.db.radix, _, _ = fs.db.radix.Insert(pathBytes, tx)
+		fs.db.Insert(path, tx)
 		fs.lock.Unlock()
-		logger.Debug("Release done", path)
+		zap.S().Debug("Release done", path)
 	}()
 
 	// TODO: find a good way to evict stale files from mem
@@ -642,7 +639,7 @@ func (fs *Dsfs) Release(path string, fh uint64) int {
 }
 
 func (fs *Dsfs) Opendir(path string) (int, uint64) {
-	logger.Debugw("Opendir", "path", path)
+	zap.S().Debugw("Opendir", "path", path)
 	return 0, 1
 }
 
@@ -652,7 +649,7 @@ func (fs *Dsfs) Readdir(
 	ofst int64,
 	fh uint64,
 ) int {
-	logger.Debugw("Readdir",
+	zap.S().Debugw("Readdir",
 		"path", path, "ofst", ofst, "fh", fh,
 	)
 	fs.lock.Lock()
@@ -660,18 +657,16 @@ func (fs *Dsfs) Readdir(
 
 	fill(".", &fuse.Stat_t{Mode: fuse.S_IFDIR | 0777}, 0)
 	fill("..", nil, 0)
-	it := fs.db.radix.Root().Iterator()
-	it.SeekPrefix([]byte(path))
+	it := fs.db.Iterator(path)
 	for key, tx, ok := it.Next(); ok; key, tx, ok = it.Next() {
-		subpath := string(key)
 		// File is already open
-		if _, ok := fs.open[subpath]; ok {
+		if _, ok := fs.open[key]; ok {
 			continue
 		}
-		if subpath == path || getDir(subpath) != path {
+		if key == path || getDir(key) != path {
 			continue
 		}
-		name := filepath.Base(subpath)
+		name := filepath.Base(key)
 		if tx.Type == FileType {
 			fill(name, &fuse.Stat_t{
 				Mode: fuse.S_IFREG | 0777,
@@ -699,12 +694,12 @@ func (fs *Dsfs) Readdir(
 }
 
 func (fs *Dsfs) Releasedir(path string, fh uint64) int {
-	logger.Debugw("Releasedir", "path", path, "fh", fh)
+	zap.S().Debugw("Releasedir", "path", path, "fh", fh)
 	return 0
 }
 
 func (fs *Dsfs) Statfs(path string, stat *fuse.Statfs_t) int {
-	logger.Debugw("Statfs", "path", path)
+	zap.S().Debugw("Statfs", "path", path)
 
 	// We are injecting some phony data here.
 	// None of this should matter.
@@ -716,11 +711,11 @@ func (fs *Dsfs) Statfs(path string, stat *fuse.Statfs_t) int {
 	return 0
 }
 
-func (fs *Dsfs) ApplyLiveTx(pathBytes []byte, tx Tx) error {
-	logger.Debugw("ApplyLiveTx", "tx.Path", tx.Path)
+func (fs *Dsfs) ApplyLiveTx(path string, tx *Tx) error {
+	zap.S().Debugw("ApplyLiveTx", "tx.Path", tx.Path)
 	fs.lock.Lock()
 
-	fs.db.radix, _, _ = fs.db.radix.Insert(pathBytes, tx)
+	fs.db.Insert(path, tx)
 	file, ok := fs.open[tx.Path]
 	if !ok {
 		fs.lock.Unlock()
@@ -761,7 +756,7 @@ func (fs *Dsfs) ApplyLiveTx(pathBytes []byte, tx Tx) error {
 			continue
 		}
 
-		n, err := getDataFile(DataChannelID, tx.FileIDs[idx], buffer)
+		n, err := getDataFile(fs.dataChannel.ID, tx.FileIDs[idx], buffer)
 		if err != nil {
 			return err
 		}

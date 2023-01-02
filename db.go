@@ -5,27 +5,62 @@ import (
 	"errors"
 	"github.com/bwmarrin/discordgo"
 	"github.com/hashicorp/go-immutable-radix/v2"
-	"go.uber.org/atomic"
+	"go.uber.org/zap"
 	"io"
 )
 
-var (
-	txReady = atomic.NewBool(false)
-)
-
-type DB struct {
-	radix *iradix.Tree[Tx]
+// DB provides a consistent interface for implementing the in-mem database backend
+type DB interface {
+	Get(key string) (*Tx, bool)
+	Insert(key string, value *Tx)
+	Delete(key string)
+	Iterator(prefix string) Iterator
 }
 
-// setupDB setups the in-mem database
-// This function needs to be refactored; it looks really gross in its current
-// state.
-func setupDB(dg *discordgo.Session, guildID string) (*DB, error) {
-	defer txReady.Store(true)
+// Iterator provides a consistent interface for implementing an iterator for DB
+type Iterator interface {
+	Next() (string, *Tx, bool)
+}
 
+// RadixDB implements DB backed by a radix tree
+type RadixDB struct {
+	radix *iradix.Tree[*Tx]
+}
+
+func (db *RadixDB) Get(key string) (*Tx, bool) {
+	return db.radix.Get([]byte(key))
+}
+
+func (db *RadixDB) Insert(key string, value *Tx) {
+	db.radix, _, _ = db.radix.Insert([]byte(key), value)
+}
+
+func (db *RadixDB) Delete(key string) {
+	db.radix, _, _ = db.radix.Delete([]byte(key))
+}
+
+func (db *RadixDB) Iterator(prefix string) Iterator {
+	iter := db.radix.Root().Iterator()
+	iter.SeekPrefix([]byte(prefix))
+	return &RadixDBIterator{iter: iter}
+}
+
+// RadixDBIterator implements an iterator for RadixDB
+type RadixDBIterator struct {
+	iter *iradix.Iterator[*Tx]
+}
+
+func (iter *RadixDBIterator) Next() (string, *Tx, bool) {
+	bytesKey, tx, ok := iter.iter.Next()
+	return string(bytesKey), tx, ok
+}
+
+// prepareChannels prepares the tx and data channels
+// creating channels if necessary
+func prepareChannels(dg *discordgo.Session, guildID string) (*discordgo.Channel, *discordgo.Channel, error) {
 	channels, err := dg.GuildChannels(guildID)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	// Find existing channels
@@ -44,19 +79,20 @@ func setupDB(dg *discordgo.Session, guildID string) (*DB, error) {
 		if channel == nil {
 			create, err := dg.GuildChannelCreate(guildID, name, discordgo.ChannelTypeGuildText)
 			if err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 			channelMap[name] = create
 		}
 	}
 
-	DataChannelID = channelMap[DataChannelName].ID
-	TxChannelID = channelMap[TxChannelName].ID
+	return channelMap[TxChannelName], channelMap[DataChannelName], nil
+}
 
-	db := &DB{
-		radix: iradix.New[Tx](),
-	}
-	channel := channelMap[TxChannelName]
+// setupDB setups the in-mem database
+// This function needs to be refactored; it looks really gross in its current
+// state.
+func setupDB(dg *discordgo.Session, txChannel *discordgo.Channel, compact bool) (DB, error) {
+	db := &RadixDB{radix: iradix.New[*Tx]()}
 
 	txBuffer := &bytes.Buffer{}
 	var pinnedMsg *discordgo.Message
@@ -68,8 +104,8 @@ func setupDB(dg *discordgo.Session, guildID string) (*DB, error) {
 	//
 	// If lastPinTimestamp is not found, we insert the root folder to
 	// initialize.
-	if channel.LastPinTimestamp != nil {
-		pinnedMsgs, err := dg.ChannelMessagesPinned(channel.ID)
+	if txChannel.LastPinTimestamp != nil {
+		pinnedMsgs, err := dg.ChannelMessagesPinned(txChannel.ID)
 		if err != nil {
 			return nil, err
 		}
@@ -82,7 +118,7 @@ func setupDB(dg *discordgo.Session, guildID string) (*DB, error) {
 		messages := []*discordgo.Message{pinnedMsg}
 		for {
 			batch, err := dg.ChannelMessages(
-				channel.ID,
+				txChannel.ID,
 				MaxDiscordMessageRequest,
 				"", messages[len(messages)-1].ID, "",
 			)
@@ -105,28 +141,29 @@ func setupDB(dg *discordgo.Session, guildID string) (*DB, error) {
 		}
 
 		if compact {
-			logger.Info("compacting TXs")
+			zap.S().Info("compacting TXs")
 			applyMessageTxs(db, messages, txBuffer, false)
 		} else {
 			applyMessageTxs(db, messages, nil, false)
 		}
 	} else {
-		tx := Tx{
+		tx := &Tx{
 			Tx:   WriteTx,
 			Path: "/",
 			Type: FolderType,
 		}
-		db.radix, _, _ = db.radix.Insert([]byte("/"), tx)
+		db.Insert("/", tx)
 		b, _ := json.Marshal(tx)
+		var err error
 		pinnedMsg, err = dg.ChannelFileSend(
-			channel.ID,
+			txChannel.ID,
 			TxChannelName,
 			bytes.NewReader(b),
 		)
 		if err != nil {
 			return nil, err
 		}
-		err = dg.ChannelMessagePin(channel.ID, pinnedMsg.ID)
+		err = dg.ChannelMessagePin(txChannel.ID, pinnedMsg.ID)
 		if err != nil {
 			return nil, err
 		}
@@ -134,7 +171,7 @@ func setupDB(dg *discordgo.Session, guildID string) (*DB, error) {
 
 	// Return early if compaction is not needed
 	if !compact {
-		logger.Info("compaction not needed")
+		zap.S().Info("compaction not needed")
 		return db, nil
 	}
 
@@ -143,16 +180,16 @@ func setupDB(dg *discordgo.Session, guildID string) (*DB, error) {
 	for {
 		b, err := txBuffer.ReadBytes('\n')
 		if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
-			logger.Warn("failed to read message buffer", err)
+			zap.S().Warn("failed to read message buffer", err)
 			return db, nil
 		}
 		if err != nil || len(b) == 0 {
 			break
 		}
 		if len(messageBuffer)+len(b) > MaxDiscordFileSize {
-			msg, err := dg.ChannelFileSend(TxChannelID, TxChannelName, bytes.NewReader(messageBuffer))
+			msg, err := dg.ChannelFileSend(txChannel.ID, TxChannelName, bytes.NewReader(messageBuffer))
 			if err != nil {
-				logger.Warn("aborting transaction compaction", err)
+				zap.S().Warn("aborting transaction compaction", err)
 				return db, nil
 			}
 			if firstMsg == nil {
@@ -167,9 +204,9 @@ func setupDB(dg *discordgo.Session, guildID string) (*DB, error) {
 
 	// Check if messageBuffer has outstanding transactions
 	if len(messageBuffer) != 0 {
-		msg, err := dg.ChannelFileSend(TxChannelID, TxChannelName, bytes.NewReader(messageBuffer))
+		msg, err := dg.ChannelFileSend(txChannel.ID, TxChannelName, bytes.NewReader(messageBuffer))
 		if err != nil {
-			logger.Warn("aborting transaction compaction", err)
+			zap.S().Warn("aborting transaction compaction", err)
 			return db, nil
 		}
 		if firstMsg == nil {
@@ -178,14 +215,14 @@ func setupDB(dg *discordgo.Session, guildID string) (*DB, error) {
 	}
 
 	if firstMsg != nil {
-		err := dg.ChannelMessagePin(TxChannelID, firstMsg.ID)
+		err := dg.ChannelMessagePin(txChannel.ID, firstMsg.ID)
 		if err != nil {
-			logger.Warn("failed to pin new transaction start point")
+			zap.S().Warn("failed to pin new transaction start point")
 			return db, nil
 		}
-		err = dg.ChannelMessageUnpin(TxChannelID, pinnedMsg.ID)
+		err = dg.ChannelMessageUnpin(txChannel.ID, pinnedMsg.ID)
 		if err != nil {
-			logger.Warn("failed to unpin old transaction start point, please manually unpin old pinned messages")
+			zap.S().Warn("failed to unpin old transaction start point, please manually unpin old pinned messages")
 			return db, nil
 		}
 	}

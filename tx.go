@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"fmt"
 	"github.com/bwmarrin/discordgo"
+	"go.uber.org/zap"
 	"io"
 	"net/http"
 	"time"
@@ -38,8 +39,8 @@ func createDeleteTx(path string) Tx {
 	return Tx{Tx: DeleteTx, Path: path}
 }
 
-func applyMessageTxs(db *DB, ms []*discordgo.Message, buffer *bytes.Buffer, live bool) {
-	logger.Infof("applying %d messages with TXs", len(ms))
+func applyMessageTxs(db DB, ms []*discordgo.Message, buffer *bytes.Buffer, live bool) {
+	zap.S().Infof("applying %d messages with TXs", len(ms))
 	for _, m := range ms {
 		if len(m.Attachments) == 0 {
 			continue
@@ -47,7 +48,7 @@ func applyMessageTxs(db *DB, ms []*discordgo.Message, buffer *bytes.Buffer, live
 
 		resp, err := http.Get(m.Attachments[0].URL)
 		if err != nil {
-			logger.Warnf("%s, skipping tx batch", err)
+			zap.S().Warnf("%s, skipping tx batch", err)
 			continue
 		}
 
@@ -58,38 +59,36 @@ func applyMessageTxs(db *DB, ms []*discordgo.Message, buffer *bytes.Buffer, live
 			if len(line) == 0 {
 				continue
 			}
-			tx := Tx{}
-			err := json.Unmarshal([]byte(line), &tx)
+			tx := &Tx{}
+			err := json.Unmarshal([]byte(line), tx)
 			if err != nil {
-				logger.Warnf("%s, skipping tx", err)
+				zap.S().Warnf("%s, skipping tx", err)
 				continue
 			}
 
-			pathBytes := []byte(tx.Path)
-
 			switch tx.Tx {
 			case WriteTx:
-				logger.Debug("Write", tx.Path)
+				zap.S().Debug("Write", tx.Path)
 				if live {
-					err := dsfs.ApplyLiveTx(pathBytes, tx)
+					err := dsfs.ApplyLiveTx(tx.Path, tx)
 					if err != nil {
-						logger.Warn("failed to apply live tx", err)
+						zap.S().Warn("failed to apply live tx", err)
 					}
 				} else {
-					db.radix, _, _ = db.radix.Insert(pathBytes, tx)
+					db.Insert(tx.Path, tx)
 				}
 			case DeleteTx:
-				logger.Debug("Delete", tx.Path)
+				zap.S().Debug("Delete", tx.Path)
 				if live {
 					dsfs.lock.Lock()
-					db.radix, _, _ = db.radix.Delete(pathBytes)
+					db.Delete(tx.Path)
 					delete(dsfs.open, tx.Path)
 					dsfs.lock.Unlock()
 				} else {
-					db.radix, _, _ = db.radix.Delete(pathBytes)
+					db.Delete(tx.Path)
 				}
 			default:
-				logger.Warnf("found unknown tx type %d, skipping tx", tx.Tx)
+				zap.S().Warnf("found unknown tx type %d, skipping tx", tx.Tx)
 				continue
 			}
 
@@ -102,12 +101,12 @@ func applyMessageTxs(db *DB, ms []*discordgo.Message, buffer *bytes.Buffer, live
 
 		resp.Body.Close()
 	}
-	logger.Info("done applying TXs")
+	zap.S().Info("done applying TXs")
 }
 
 func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 	// Not ready to accept TXs
-	if !txReady.Load() {
+	if !dsfsReady.Load() {
 		return
 	}
 
@@ -116,12 +115,12 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 		return
 	}
 
-	if m.ChannelID != TxChannelID {
+	if m.ChannelID != dsfs.txChannel.ID {
 		return
 	}
 
 	// There is potentially some issues when doing this
 	// In this current state, open files will not be affected
 	// by any TXs broadcasted by remote clients
-	applyMessageTxs(db, []*discordgo.Message{m.Message}, nil, true)
+	applyMessageTxs(dsfs.db, []*discordgo.Message{m.Message}, nil, true)
 }
