@@ -89,7 +89,9 @@ func main() {
 		return
 	}
 
-	dsfs = NewDsfs(dg, db, txChannel, dataChannel)
+	writer := setupWriter(dg, txChannel.ID, dataChannel.ID)
+
+	dsfs = NewDsfs(dg, db, writer, txChannel, dataChannel)
 	dsfsReady.Store(true)
 
 	host := fuse.NewFileSystemHost(dsfs)

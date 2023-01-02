@@ -13,7 +13,7 @@ synchronization and functionality.
 
 ![Demo](demo.gif)
 
-Here is a blog post going over some of the implementation
+Here is a blog post going over some implementation
 details: [FUSEing for fun](https://www.darenliang.com/posts/fuseing-for-fun)
 
 ## Building

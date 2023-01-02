@@ -180,7 +180,7 @@ func setupDB(dg *discordgo.Session, txChannel *discordgo.Channel, compact bool) 
 	for {
 		b, err := txBuffer.ReadBytes('\n')
 		if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
-			zap.S().Warn("failed to read message buffer", err)
+			zap.S().Warnw("failed to read message buffer", "error", err)
 			return db, nil
 		}
 		if err != nil || len(b) == 0 {
@@ -189,7 +189,7 @@ func setupDB(dg *discordgo.Session, txChannel *discordgo.Channel, compact bool) 
 		if len(messageBuffer)+len(b) > MaxDiscordFileSize {
 			msg, err := dg.ChannelFileSend(txChannel.ID, TxChannelName, bytes.NewReader(messageBuffer))
 			if err != nil {
-				zap.S().Warn("aborting transaction compaction", err)
+				zap.S().Warnw("aborting transaction compaction", "error", err)
 				return db, nil
 			}
 			if firstMsg == nil {
@@ -206,7 +206,7 @@ func setupDB(dg *discordgo.Session, txChannel *discordgo.Channel, compact bool) 
 	if len(messageBuffer) != 0 {
 		msg, err := dg.ChannelFileSend(txChannel.ID, TxChannelName, bytes.NewReader(messageBuffer))
 		if err != nil {
-			zap.S().Warn("aborting transaction compaction", err)
+			zap.S().Warnw("aborting transaction compaction", "error", err)
 			return db, nil
 		}
 		if firstMsg == nil {

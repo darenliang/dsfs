@@ -42,64 +42,62 @@ func createDeleteTx(path string) Tx {
 func applyMessageTxs(db DB, ms []*discordgo.Message, buffer *bytes.Buffer, live bool) {
 	zap.S().Infof("applying %d messages with TXs", len(ms))
 	for _, m := range ms {
-		if len(m.Attachments) == 0 {
-			continue
-		}
-
-		resp, err := http.Get(m.Attachments[0].URL)
-		if err != nil {
-			zap.S().Warnf("%s, skipping tx batch", err)
-			continue
-		}
-
-		scanner := bufio.NewScanner(resp.Body)
-
-		for scanner.Scan() {
-			line := scanner.Text()
-			if len(line) == 0 {
-				continue
-			}
-			tx := &Tx{}
-			err := json.Unmarshal([]byte(line), tx)
+		for _, file := range m.Attachments {
+			resp, err := http.Get(file.URL)
 			if err != nil {
-				zap.S().Warnf("%s, skipping tx", err)
+				zap.S().Warnf("%s, skipping tx batch", err)
 				continue
 			}
 
-			switch tx.Tx {
-			case WriteTx:
-				zap.S().Debug("Write", tx.Path)
-				if live {
-					err := dsfs.ApplyLiveTx(tx.Path, tx)
-					if err != nil {
-						zap.S().Warn("failed to apply live tx", err)
+			scanner := bufio.NewScanner(resp.Body)
+
+			for scanner.Scan() {
+				line := scanner.Text()
+				if len(line) == 0 {
+					continue
+				}
+				tx := &Tx{}
+				err := json.Unmarshal([]byte(line), tx)
+				if err != nil {
+					zap.S().Warnf("%s, skipping tx", err)
+					continue
+				}
+
+				switch tx.Tx {
+				case WriteTx:
+					zap.S().Debugw("Write", "path", tx.Path)
+					if live {
+						err := dsfs.ApplyLiveTx(tx.Path, tx)
+						if err != nil {
+							zap.S().Warnw("failed to apply live tx", "error", err)
+						}
+					} else {
+						db.Insert(tx.Path, tx)
 					}
-				} else {
-					db.Insert(tx.Path, tx)
+				case DeleteTx:
+					zap.S().Debugw("Delete", "path", tx.Path)
+					if live {
+						dsfs.lock.Lock()
+						db.Delete(tx.Path)
+						delete(dsfs.open, tx.Path)
+						dsfs.lock.Unlock()
+					} else {
+						db.Delete(tx.Path)
+					}
+				default:
+					zap.S().Warnf("found unknown tx type %d, skipping tx", tx.Tx)
+					continue
 				}
-			case DeleteTx:
-				zap.S().Debug("Delete", tx.Path)
-				if live {
-					dsfs.lock.Lock()
-					db.Delete(tx.Path)
-					delete(dsfs.open, tx.Path)
-					dsfs.lock.Unlock()
-				} else {
-					db.Delete(tx.Path)
+
+				// Write to buffer
+				if buffer != nil {
+					buffer.WriteString(line)
+					buffer.WriteByte('\n')
 				}
-			default:
-				zap.S().Warnf("found unknown tx type %d, skipping tx", tx.Tx)
-				continue
 			}
 
-			// Write to buffer
-			if buffer != nil {
-				buffer.WriteString(line)
-				buffer.WriteByte('\n')
-			}
+			resp.Body.Close()
 		}
-
-		resp.Body.Close()
 	}
 	zap.S().Info("done applying TXs")
 }

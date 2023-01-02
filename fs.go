@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"crypto/sha1"
 	"encoding/base64"
 	"errors"
@@ -18,6 +17,7 @@ type Dsfs struct {
 	fuse.FileSystemBase
 	dg          *discordgo.Session
 	db          DB
+	writer      *Writer
 	txChannel   *discordgo.Channel
 	dataChannel *discordgo.Channel
 	open        map[string]*FileData
@@ -34,10 +34,11 @@ type FileData struct {
 	dirty   bool
 }
 
-func NewDsfs(dg *discordgo.Session, db DB, txChannel *discordgo.Channel, dataChannel *discordgo.Channel) *Dsfs {
+func NewDsfs(dg *discordgo.Session, db DB, writer *Writer, txChannel *discordgo.Channel, dataChannel *discordgo.Channel) *Dsfs {
 	dsfs := Dsfs{}
 	dsfs.dg = dg
 	dsfs.db = db
+	dsfs.writer = writer
 	dsfs.txChannel = txChannel
 	dsfs.dataChannel = dataChannel
 	dsfs.open = make(map[string]*FileData)
@@ -106,10 +107,8 @@ func (fs *Dsfs) Mkdir(path string, mode uint32) int {
 	if len(b) > MaxDiscordFileSize {
 		return -fuse.EACCES
 	}
-	_, err := fs.dg.ChannelFileSend(fs.txChannel.ID, TxChannelName, bytes.NewReader(b))
-	if err != nil {
-		return -fuse.EACCES
-	}
+
+	go func() { fs.writer.SendTx(b) }()
 
 	return 0
 }
@@ -163,7 +162,7 @@ func (fs *Dsfs) Open(path string, flags int) (int, uint64) {
 			}
 			n, err := getDataFile(fs.dataChannel.ID, id, buffer)
 			if err != nil {
-				zap.S().Warn("network error with Discord", err)
+				zap.S().Warnw("network error with Discord", "error", err)
 				return err
 			}
 			file.lock.Lock()
@@ -236,10 +235,8 @@ func (fs *Dsfs) Unlink(path string) int {
 	if len(b) > MaxDiscordFileSize {
 		return -fuse.EACCES
 	}
-	_, err := fs.dg.ChannelFileSend(fs.txChannel.ID, TxChannelName, bytes.NewReader(b))
-	if err != nil {
-		return -fuse.EACCES
-	}
+
+	go func() { fs.writer.SendTx(b) }()
 
 	return 0
 }
@@ -273,10 +270,8 @@ func (fs *Dsfs) Rmdir(path string) int {
 	if len(b) > MaxDiscordFileSize {
 		return -fuse.EACCES
 	}
-	_, err := fs.dg.ChannelFileSend(fs.txChannel.ID, TxChannelName, bytes.NewReader(b))
-	if err != nil {
-		return -fuse.EACCES
-	}
+
+	go func() { fs.writer.SendTx(b) }()
 
 	return 0
 }
@@ -337,22 +332,12 @@ func (fs *Dsfs) Rename(oldpath string, newpath string) int {
 	}
 
 	if len(writeTxBytes)+len(deleteTxBytes) > MaxDiscordFileSize {
-		_, err := fs.dg.ChannelFileSend(fs.txChannel.ID, TxChannelName, bytes.NewReader(writeTxBytes))
-		if err != nil {
-			return -fuse.EACCES
-		}
-		_, err = fs.dg.ChannelFileSend(fs.txChannel.ID, TxChannelName, bytes.NewReader(deleteTxBytes))
-		if err != nil {
-			return -fuse.EACCES
-		}
+		go func() {
+			fs.writer.SendTx(writeTxBytes)
+			fs.writer.SendTx(deleteTxBytes)
+		}()
 	} else {
-		_, err := fs.dg.ChannelFileSend(
-			fs.txChannel.ID, TxChannelName,
-			bytes.NewReader(append(append(writeTxBytes, '\n'), deleteTxBytes...)),
-		)
-		if err != nil {
-			return -fuse.EACCES
-		}
+		go func() { fs.writer.SendTx(append(append(writeTxBytes, '\n'), deleteTxBytes...)) }()
 	}
 	fs.lock.Lock()
 	fs.db.Insert(newpath, tx)
@@ -464,7 +449,7 @@ func (fs *Dsfs) Read(path string, buff []byte, ofst int64, fh uint64) int {
 		}
 		retries++
 		file.lock.RUnlock()
-		time.Sleep(PollInterval * time.Millisecond)
+		time.Sleep(PollInterval)
 		file.lock.RLock()
 	}
 
@@ -582,12 +567,12 @@ func (fs *Dsfs) Release(path string, fh uint64) int {
 			}
 			file.lock.RUnlock()
 
-			msg, err := fs.dg.ChannelFileSend(fs.dataChannel.ID, DataChannelName, bytes.NewReader(buffer))
+			fileID, err := fs.writer.SendData(buffer)
 			if err != nil {
 				return err
 			}
 			tx.Checksums = append(tx.Checksums, newChecksumStr)
-			tx.FileIDs = append(tx.FileIDs, msg.Attachments[0].ID)
+			tx.FileIDs = append(tx.FileIDs, fileID)
 			return nil
 		}
 
@@ -623,14 +608,14 @@ func (fs *Dsfs) Release(path string, fh uint64) int {
 		if len(b) > MaxDiscordFileSize {
 			return
 		}
-		_, err := fs.dg.ChannelFileSend(fs.txChannel.ID, TxChannelName, bytes.NewReader(b))
+		_, err := fs.writer.SendTx(b)
 		if err != nil {
 			return
 		}
 		fs.lock.Lock()
 		fs.db.Insert(path, tx)
 		fs.lock.Unlock()
-		zap.S().Debug("Release done", path)
+		zap.S().Debugw("Release done", "path", path)
 	}()
 
 	// TODO: find a good way to evict stale files from mem
