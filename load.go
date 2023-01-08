@@ -1,5 +1,6 @@
 package main
 
+// Remove once generic sorts are in standard library
 import "golang.org/x/exp/slices"
 
 type Range struct {

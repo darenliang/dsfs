@@ -4,10 +4,10 @@ import (
 	"flag"
 	"github.com/bwmarrin/discordgo"
 	"github.com/darenliang/dsfs/fuse"
+	"github.com/valyala/fasthttp"
+	"github.com/valyala/fasthttp/pprofhandler"
 	"go.uber.org/atomic"
 	"go.uber.org/zap"
-	"net/http"
-	_ "net/http/pprof"
 )
 
 var (
@@ -40,7 +40,7 @@ func main() {
 		zap.ReplaceGlobals(logger)
 		go func() {
 			zap.S().Info("pprof running on port 8000")
-			_ = http.ListenAndServe(":8000", nil)
+			_ = fasthttp.ListenAndServe(":8000", pprofhandler.PprofHandler)
 		}()
 	} else {
 		zap.ReplaceGlobals(logger.WithOptions(zap.IncreaseLevel(zap.InfoLevel)))
