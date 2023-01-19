@@ -3,13 +3,13 @@ module github.com/darenliang/dsfs
 go 1.18
 
 require (
-	github.com/bwmarrin/discordgo v0.26.1
+	github.com/bwmarrin/discordgo v0.27.0
 	github.com/hashicorp/go-immutable-radix/v2 v2.0.0
 	github.com/json-iterator/go v1.1.12
-	github.com/valyala/fasthttp v1.43.0
+	github.com/valyala/fasthttp v1.44.0
 	go.uber.org/atomic v1.10.0
 	go.uber.org/zap v1.24.0
-	golang.org/x/exp v0.0.0-20230105202349-8879d0199aa3
+	golang.org/x/exp v0.0.0-20230118134722-a68e582fa157
 )
 
 require (
