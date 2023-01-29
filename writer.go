@@ -7,13 +7,13 @@ import (
 )
 
 type QueueItem struct {
-	data    []byte
 	channel chan QueueResult
+	data    []byte
 }
 
 type QueueResult struct {
-	fileID string
 	err    error
+	fileID string
 }
 
 type Writer struct {

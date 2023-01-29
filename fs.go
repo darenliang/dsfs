@@ -6,10 +6,10 @@ import (
 	"errors"
 	"github.com/bwmarrin/discordgo"
 	"github.com/darenliang/dsfs/fuse"
-	"go.uber.org/atomic"
 	"go.uber.org/zap"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -70,7 +70,7 @@ func (fs *Dsfs) Mknod(path string, mode uint32, dev uint64) int {
 	fs.open[path] = &FileData{
 		data:    make([]byte, 0),
 		load:    newLoad(),
-		syncing: atomic.NewBool(false),
+		syncing: &atomic.Bool{},
 		mtim:    time.Now(),
 		ctim:    time.Now(),
 	}
@@ -137,7 +137,7 @@ func (fs *Dsfs) Open(path string, flags int) (int, uint64) {
 	fs.open[path] = &FileData{
 		data:    make([]byte, tx.Size),
 		load:    newLoad(),
-		syncing: atomic.NewBool(false),
+		syncing: &atomic.Bool{},
 		mtim:    tx.Mtim,
 		ctim:    tx.Ctim,
 	}

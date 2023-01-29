@@ -6,8 +6,8 @@ import (
 	"github.com/darenliang/dsfs/fuse"
 	"github.com/valyala/fasthttp"
 	"github.com/valyala/fasthttp/pprofhandler"
-	"go.uber.org/atomic"
 	"go.uber.org/zap"
+	"sync/atomic"
 )
 
 var (
@@ -21,7 +21,7 @@ var (
 	requiredFlags = []string{"t", "s"}
 	// We need to jankily expose dsfs for event handlers
 	dsfs      *Dsfs
-	dsfsReady = atomic.NewBool(false)
+	dsfsReady = &atomic.Bool{}
 )
 
 func main() {
