@@ -75,13 +75,19 @@ dsfs -t <Bot token> -s <Server ID> -m <Mount point> -u
 To run with transaction compaction:
 
 ```bash
-dsfs -t <Bot token> -s <Server ID> -m <Mount point> -c
+dsfs -t <Bot token> -s <Server ID> -m <Mount point> -x
 ```
 
 To run with FUSE options:
 
 ```bash
 dsfs -t <Bot token> -s <Server ID> -m <Mount point> -o <FUSE option>
+```
+
+To get more information about the available options:
+
+```bash
+dsfs --help
 ```
 
 ## Common fixes to issues
