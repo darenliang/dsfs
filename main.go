@@ -7,10 +7,7 @@ import (
 	"github.com/valyala/fasthttp/pprofhandler"
 	"go.uber.org/zap"
 	"gopkg.in/alecthomas/kingpin.v2"
-	"os"
-	"os/signal"
 	"sync/atomic"
-	"syscall"
 )
 
 var (
@@ -90,15 +87,5 @@ func main() {
 
 	host := fuse.NewFileSystemHost(dsfs)
 	host.SetCapReaddirPlus(true)
-	go func() { host.Mount(mount, FuseArgs(options)) }()
-
-	// Wait for signal to shutdown
-	c := make(chan os.Signal)
-	signal.Notify(c, os.Interrupt, os.Kill, syscall.SIGTERM)
-	<-c
-	zap.S().Info("starting shutdown")
-	for _, fileData := range dsfs.open {
-		fileData.cache.Rm()
-	}
-	zap.S().Info("finished shutdown")
+	host.Mount(mount, FuseArgs(options))
 }
