@@ -22,6 +22,7 @@ type Dsfs struct {
 	dataChannel *discordgo.Channel
 	open        map[string]*FileData
 	lock        sync.Mutex
+	cacheType   string
 }
 
 type FileData struct {
@@ -29,12 +30,12 @@ type FileData struct {
 	ctim    time.Time
 	syncing *atomic.Bool
 	load    *Load
-	data    []byte
+	cache   Cache
 	lock    sync.RWMutex
 	dirty   bool
 }
 
-func NewDsfs(dg *discordgo.Session, db DB, writer *Writer, txChannel *discordgo.Channel, dataChannel *discordgo.Channel) *Dsfs {
+func NewDsfs(dg *discordgo.Session, db DB, writer *Writer, txChannel *discordgo.Channel, dataChannel *discordgo.Channel, cacheType string) *Dsfs {
 	dsfs := Dsfs{}
 	dsfs.dg = dg
 	dsfs.db = db
@@ -42,6 +43,7 @@ func NewDsfs(dg *discordgo.Session, db DB, writer *Writer, txChannel *discordgo.
 	dsfs.txChannel = txChannel
 	dsfs.dataChannel = dataChannel
 	dsfs.open = make(map[string]*FileData)
+	dsfs.cacheType = cacheType
 	return &dsfs
 }
 
@@ -68,7 +70,7 @@ func (fs *Dsfs) Mknod(path string, mode uint32, dev uint64) int {
 	}
 
 	fs.open[path] = &FileData{
-		data:    make([]byte, 0),
+		cache:   fs.GetNewCache(),
 		load:    newLoad(),
 		syncing: &atomic.Bool{},
 		mtim:    time.Now(),
@@ -134,8 +136,10 @@ func (fs *Dsfs) Open(path string, flags int) (int, uint64) {
 		return 0, 1
 	}
 
+	cache := fs.GetNewCache()
+	cache.Truncate(tx.Size)
 	fs.open[path] = &FileData{
-		data:    make([]byte, tx.Size),
+		cache:   cache,
 		load:    newLoad(),
 		syncing: &atomic.Bool{},
 		mtim:    tx.Mtim,
@@ -166,7 +170,7 @@ func (fs *Dsfs) Open(path string, flags int) (int, uint64) {
 				return err
 			}
 			file.lock.Lock()
-			copy(file.data[ofst:ofst+n], buffer[:n])
+			file.cache.WriteRange(int64(ofst), int64(ofst+n), buffer[:n])
 			file.load.addRange(int64(ofst), int64(ofst+n))
 			file.lock.Unlock()
 			return nil
@@ -355,7 +359,7 @@ func (fs *Dsfs) Getattr(path string, stat *fuse.Stat_t, fh uint64) int {
 	// Check open map
 	if file, ok := fs.open[path]; ok {
 		stat.Mode = fuse.S_IFREG | 0777
-		stat.Size = int64(len(file.data))
+		stat.Size = file.cache.Size()
 		stat.Ctim = fuse.NewTimespec(file.ctim)
 		stat.Mtim = fuse.NewTimespec(file.mtim)
 		return 0
@@ -391,18 +395,17 @@ func (fs *Dsfs) Truncate(path string, size int64, fh uint64) int {
 	fs.lock.Unlock()
 
 	file.lock.Lock()
-	filesize := int64(len(file.data))
+	filesize := file.cache.Size()
 	if size == filesize {
 		file.lock.Unlock()
 		return 0
 	} else if size < filesize {
-		file.data = file.data[:size]
 		file.load.truncate(size)
 	} else {
-		file.data = append(file.data, make([]byte, size-filesize)...)
 		file.load.addRange(filesize, filesize+size)
 	}
 
+	file.cache.Truncate(size)
 	file.mtim = time.Now()
 	file.dirty = true
 	file.lock.Unlock()
@@ -432,7 +435,7 @@ func (fs *Dsfs) Read(path string, buff []byte, ofst int64, fh uint64) int {
 
 	file.lock.RLock()
 	for {
-		filesize := int64(len(file.data))
+		filesize := file.cache.Size()
 		bytesReady = file.load.bytesReady(ofst)
 		if bytesReady > 0 {
 			if bytesReady > buffLen {
@@ -453,10 +456,10 @@ func (fs *Dsfs) Read(path string, buff []byte, ofst int64, fh uint64) int {
 		file.lock.RLock()
 	}
 
-	bytesRead := copy(buff, file.data[ofst:ofst+bytesReady])
+	bytesRead := file.cache.ReadRange(ofst, ofst+bytesReady, buff)
 	file.lock.RUnlock()
 
-	return bytesRead
+	return int(bytesRead)
 }
 
 func (fs *Dsfs) Write(path string, buff []byte, ofst int64, fh uint64) int {
@@ -479,12 +482,12 @@ func (fs *Dsfs) Write(path string, buff []byte, ofst int64, fh uint64) int {
 	endofst := ofst + int64(len(buff))
 
 	file.lock.Lock()
-	filesize := int64(len(file.data))
+	filesize := file.cache.Size()
 	if endofst > filesize {
-		file.data = append(file.data, make([]byte, endofst-filesize)...)
+		file.cache.Truncate(endofst)
 	}
 
-	bytesWrite := copy(file.data[ofst:endofst], buff)
+	bytesWrite := file.cache.WriteRange(ofst, endofst, buff)
 	if !file.load.isReady(ofst, endofst) {
 		file.load.addRange(ofst, endofst)
 	}
@@ -492,7 +495,7 @@ func (fs *Dsfs) Write(path string, buff []byte, ofst int64, fh uint64) int {
 	file.dirty = true
 	file.lock.Unlock()
 
-	return bytesWrite
+	return int(bytesWrite)
 }
 
 func (fs *Dsfs) Release(path string, fh uint64) int {
@@ -521,7 +524,7 @@ func (fs *Dsfs) Release(path string, fh uint64) int {
 		Path:    path,
 		Type:    FileType,
 		FileIDs: make([]string, 0),
-		Size:    int64(len(file.data)),
+		Size:    file.cache.Size(),
 		Mtim:    file.mtim,
 		Ctim:    file.ctim,
 	}
@@ -540,21 +543,23 @@ func (fs *Dsfs) Release(path string, fh uint64) int {
 		up := func(idx int, fileID string, checksum string) error {
 			file.lock.RLock()
 
-			ofst := idx * MaxDiscordFileSize
+			ofst := int64(idx * MaxDiscordFileSize)
 
 			// We need to be very careful about this because we want lock with
 			// quick and correct contention.
-			if ofst > len(file.data) {
+			filesize := file.cache.Size()
+			if ofst > filesize {
 				file.lock.RUnlock()
 				return nil
 			}
 
 			end := ofst + MaxDiscordFileSize
-			if end > len(file.data) {
-				end = len(file.data)
+			if end > filesize {
+				end = filesize
 			}
 
-			buffer := file.data[ofst:end]
+			buffer := make([]byte, end-ofst)
+			file.cache.ReadRange(ofst, end, buffer)
 			newChecksum := sha1.Sum(buffer)
 			newChecksumStr := base64.URLEncoding.EncodeToString(newChecksum[:])
 
@@ -576,8 +581,9 @@ func (fs *Dsfs) Release(path string, fh uint64) int {
 			return nil
 		}
 
-		end := len(file.data) / MaxDiscordFileSize
-		if len(file.data)%MaxDiscordFileSize != 0 {
+		filesize := file.cache.Size()
+		end := int(filesize / MaxDiscordFileSize)
+		if filesize%MaxDiscordFileSize != 0 {
 			end++
 		}
 
@@ -670,7 +676,7 @@ func (fs *Dsfs) Readdir(
 		name := filepath.Base(key)
 		fill(name, &fuse.Stat_t{
 			Mode: fuse.S_IFREG | 0777,
-			Size: int64(len(val.data)),
+			Size: val.cache.Size(),
 			Ctim: fuse.NewTimespec(val.ctim),
 			Mtim: fuse.NewTimespec(val.mtim),
 		}, 0)
@@ -709,31 +715,32 @@ func (fs *Dsfs) ApplyLiveTx(path string, tx *Tx) error {
 	fs.lock.Unlock()
 
 	file.lock.Lock()
-	filesize := int64(len(file.data))
+	filesize := file.cache.Size()
 	if tx.Size < filesize {
-		file.data = file.data[:tx.Size]
 		file.load.truncate(tx.Size)
-	} else if tx.Size > filesize {
-		file.data = append(file.data, make([]byte, tx.Size-filesize)...)
 	}
+	file.cache.Truncate(tx.Size)
 	file.lock.Unlock()
 
 	buffer := make([]byte, MaxDiscordFileSize)
 	for idx, checksum := range tx.Checksums {
 		file.lock.Lock()
-		ofst := idx * MaxDiscordFileSize
+		ofst := int64(idx * MaxDiscordFileSize)
 		// Something can happen between truncating and patching memory.
 		// In this case it's really hard to recover.
-		if ofst >= len(file.data) {
+		filesize = file.cache.Size()
+		if ofst >= filesize {
 			file.lock.Unlock()
 			return errors.New("file changed while upcoming change is applied")
 		}
 		end := ofst + MaxDiscordFileSize
-		if end > len(file.data) {
-			end = len(file.data)
+		if end > filesize {
+			end = filesize
 		}
 
-		oldChecksum := sha1.Sum(file.data[ofst:end])
+		buffer = make([]byte, end-ofst)
+		file.cache.ReadRange(ofst, end, buffer)
+		oldChecksum := sha1.Sum(buffer)
 		oldChecksumStr := base64.URLEncoding.EncodeToString(oldChecksum[:])
 		file.lock.Unlock()
 
@@ -747,12 +754,24 @@ func (fs *Dsfs) ApplyLiveTx(path string, tx *Tx) error {
 		}
 
 		file.lock.Lock()
-		copy(file.data[ofst:ofst+n], buffer)
-		if !file.load.isReady(int64(ofst), int64(ofst+n)) {
-			file.load.addRange(int64(ofst), int64(ofst+n))
+		ofstn := ofst + int64(n)
+		file.cache.WriteRange(ofst, ofstn, buffer)
+		if !file.load.isReady(ofst, ofstn) {
+			file.load.addRange(ofst, ofstn)
 		}
 		file.lock.Unlock()
 	}
 
 	return nil
+}
+
+func (fs *Dsfs) GetNewCache() Cache {
+	switch fs.cacheType {
+	case "disk":
+		return NewDiskCache()
+	case "memory":
+		return NewMemoryCache()
+	default:
+		panic("unknown cache type")
+	}
 }

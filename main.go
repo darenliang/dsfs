@@ -1,38 +1,42 @@
 package main
 
 import (
-	"flag"
 	"github.com/bwmarrin/discordgo"
 	"github.com/darenliang/dsfs/fuse"
 	"github.com/valyala/fasthttp"
 	"github.com/valyala/fasthttp/pprofhandler"
 	"go.uber.org/zap"
+	"gopkg.in/alecthomas/kingpin.v2"
+	"os"
+	"os/signal"
 	"sync/atomic"
+	"syscall"
 )
 
 var (
-	token         string
-	userToken     bool
-	guildID       string
-	mount         string
-	compact       bool
-	debug         bool
-	options       FuseOpts
-	requiredFlags = []string{"t", "s"}
+	token     string
+	userToken bool
+	guildID   string
+	mount     string
+	compact   bool
+	cache     string
+	debug     bool
+	options   []string
 	// We need to jankily expose dsfs for event handlers
 	dsfs      *Dsfs
 	dsfsReady = &atomic.Bool{}
 )
 
 func main() {
-	flag.StringVar(&token, "t", "", "Token")
-	flag.BoolVar(&userToken, "u", false, "Token is a user token")
-	flag.StringVar(&guildID, "s", "", "Guild ID")
-	flag.StringVar(&mount, "m", "", "Mount point")
-	flag.BoolVar(&compact, "c", false, "Compact transactions")
-	flag.BoolVar(&debug, "d", false, "Enable pprof and print debug logs")
-	flag.Var(&options, "o", "FUSE options")
-	flag.Parse()
+	kingpin.Flag("token", "Token").Short('t').Required().StringVar(&token)
+	kingpin.Flag("server", "Guild ID").Short('s').Required().StringVar(&guildID)
+	kingpin.Flag("user", "Token is a user token").Short('u').BoolVar(&userToken)
+	kingpin.Flag("mount", "Mount point").Short('m').StringVar(&mount)
+	kingpin.Flag("compact", "Compact transactions").Short('x').BoolVar(&compact)
+	kingpin.Flag("cache", "Cache type").Short('c').Default("disk").EnumVar(&cache, "disk", "memory")
+	kingpin.Flag("verbose", "Enable pprof and print debug logs").Short('v').BoolVar(&debug)
+	kingpin.Flag("options", "FUSE options").Short('o').StringsVar(&options)
+	kingpin.Parse()
 
 	// Setup logger and debug endpoint if specified
 	logger, _ := zap.NewDevelopment()
@@ -46,16 +50,6 @@ func main() {
 		zap.ReplaceGlobals(logger.WithOptions(zap.IncreaseLevel(zap.InfoLevel)))
 	}
 	defer logger.Sync()
-
-	// Handle missing required arguments
-	seen := make(map[string]bool)
-	flag.Visit(func(f *flag.Flag) { seen[f.Name] = true })
-	for _, requiredFlag := range requiredFlags {
-		if !seen[requiredFlag] {
-			zap.S().Errorf("missing required -%s argument", requiredFlag)
-			return
-		}
-	}
 
 	var tokenPrefix string
 	if !userToken {
@@ -91,10 +85,20 @@ func main() {
 
 	writer := setupWriter(dg, txChannel.ID, dataChannel.ID)
 
-	dsfs = NewDsfs(dg, db, writer, txChannel, dataChannel)
+	dsfs = NewDsfs(dg, db, writer, txChannel, dataChannel, cache)
 	dsfsReady.Store(true)
 
 	host := fuse.NewFileSystemHost(dsfs)
 	host.SetCapReaddirPlus(true)
-	host.Mount(mount, options.Args())
+	go func() { host.Mount(mount, FuseArgs(options)) }()
+
+	// Wait for signal to shutdown
+	c := make(chan os.Signal)
+	signal.Notify(c, os.Interrupt, os.Kill, syscall.SIGTERM)
+	<-c
+	zap.S().Info("starting shutdown")
+	for _, fileData := range dsfs.open {
+		fileData.cache.Rm()
+	}
+	zap.S().Info("finished shutdown")
 }

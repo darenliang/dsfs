@@ -7,6 +7,7 @@ import (
 	"github.com/hashicorp/go-immutable-radix/v2"
 	"go.uber.org/zap"
 	"io"
+	"strings"
 )
 
 // DB provides a consistent interface for implementing the in-mem database backend
@@ -25,6 +26,11 @@ type Iterator interface {
 // RadixDB implements DB backed by a radix tree
 type RadixDB struct {
 	radix *iradix.Tree[*Tx]
+}
+
+// NewRadixDB creates a new RadixDB
+func NewRadixDB() *RadixDB {
+	return &RadixDB{radix: iradix.New[*Tx]()}
 }
 
 // Get is used to lookup a specific key, returning the value and if it was found
@@ -58,6 +64,64 @@ type RadixDBIterator struct {
 func (iter *RadixDBIterator) Next() (string, *Tx, bool) {
 	bytesKey, tx, ok := iter.iter.Next()
 	return string(bytesKey), tx, ok
+}
+
+// MapDB implements DB backed by a map
+type MapDB struct {
+	mapDB map[string]*Tx
+}
+
+// NewMapDB creates a new MapDB
+func NewMapDB() *MapDB {
+	return &MapDB{mapDB: make(map[string]*Tx)}
+}
+
+// Get is used to lookup a specific key, returning the value and if it was found
+func (db *MapDB) Get(key string) (*Tx, bool) {
+	tx, ok := db.mapDB[key]
+	return tx, ok
+}
+
+// Insert is used to add or update a given key
+func (db *MapDB) Insert(key string, value *Tx) {
+	db.mapDB[key] = value
+}
+
+// Delete is used to delete a given key
+func (db *MapDB) Delete(key string) {
+	delete(db.mapDB, key)
+}
+
+// MapIteratorEntry is used to return the next iteration for MapDBIterator
+type MapIteratorEntry struct {
+	Key string
+	Tx  *Tx
+	Ok  bool
+}
+
+// Iterator returns an Iterator that filters by prefix
+func (db *MapDB) Iterator(prefix string) Iterator {
+	iter := make(chan MapIteratorEntry)
+	go func() {
+		for key, tx := range db.mapDB {
+			if strings.HasPrefix(key, prefix) {
+				iter <- MapIteratorEntry{key, tx, true}
+			}
+		}
+		iter <- MapIteratorEntry{"", nil, false}
+	}()
+	return &MapDBIterator{iter: iter}
+}
+
+// MapDBIterator implements an iterator for MapDB
+type MapDBIterator struct {
+	iter chan MapIteratorEntry
+}
+
+// Next gets next iteration for iterator
+func (iter *MapDBIterator) Next() (string, *Tx, bool) {
+	entry := <-iter.iter
+	return entry.Key, entry.Tx, entry.Ok
 }
 
 // prepareChannels prepares the tx and data channels
@@ -97,7 +161,7 @@ func prepareChannels(dg *discordgo.Session, guildID string) (*discordgo.Channel,
 // This function needs to be refactored; it looks really gross in its current
 // state.
 func setupDB(dg *discordgo.Session, txChannel *discordgo.Channel, compact bool) (DB, error) {
-	db := &RadixDB{radix: iradix.New[*Tx]()}
+	db := NewRadixDB()
 
 	txBuffer := &bytes.Buffer{}
 	var pinnedMsg *discordgo.Message
