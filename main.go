@@ -1,13 +1,14 @@
 package main
 
 import (
+	"sync/atomic"
+
+	"github.com/alecthomas/kingpin/v2"
 	"github.com/bwmarrin/discordgo"
 	"github.com/darenliang/dsfs/fuse"
 	"github.com/valyala/fasthttp"
 	"github.com/valyala/fasthttp/pprofhandler"
 	"go.uber.org/zap"
-	"gopkg.in/alecthomas/kingpin.v2"
-	"sync/atomic"
 )
 
 var (

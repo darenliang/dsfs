@@ -3,11 +3,12 @@ package main
 import (
 	"bytes"
 	"errors"
+	"io"
+	"strings"
+
 	"github.com/bwmarrin/discordgo"
 	"github.com/hashicorp/go-immutable-radix/v2"
 	"go.uber.org/zap"
-	"io"
-	"strings"
 )
 
 // DB provides a consistent interface for implementing the in-mem database backend

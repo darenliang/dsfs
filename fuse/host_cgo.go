@@ -634,9 +634,21 @@ static int hostUnmount(struct fuse *fuse, char *mountpoint)
 	if (0 == umount2(mountpoint, MNT_DETACH))
 		return 1;
 	// linux: umount2 failed; try fusermount
-	char *argv[] =
+	char *paths[] =
 	{
 		"/bin/fusermount",
+		"/usr/bin/fusermount",
+	};
+	char *path = paths[0];
+	for (size_t i = 0; sizeof paths / sizeof paths[0] > i; i++)
+		if (0 == access(paths[i], X_OK))
+		{
+			path = paths[i];
+			break;
+		}
+	char *argv[] =
+	{
+		path,
 		"-z",
 		"-u",
 		mountpoint,
@@ -739,6 +751,7 @@ type (
 func c_GoString(s *c_char) string {
 	return C.GoString(s)
 }
+
 func c_CString(s string) *c_char {
 	return C.CString(s)
 }
@@ -746,9 +759,11 @@ func c_CString(s string) *c_char {
 func c_malloc(size c_size_t) unsafe.Pointer {
 	return C.malloc(size)
 }
+
 func c_calloc(count c_size_t, size c_size_t) unsafe.Pointer {
 	return C.calloc(count, size)
 }
+
 func c_free(p unsafe.Pointer) {
 	C.free(p)
 }
@@ -756,6 +771,7 @@ func c_free(p unsafe.Pointer) {
 func c_fuse_get_context() *c_struct_fuse_context {
 	return C.fuse_get_context()
 }
+
 func c_fuse_opt_free_args(args *c_struct_fuse_args) {
 	C.fuse_opt_free_args(args)
 }
@@ -763,9 +779,11 @@ func c_fuse_opt_free_args(args *c_struct_fuse_args) {
 func c_hostAsgnCconninfo(conn *c_struct_fuse_conn_info,
 	capCaseInsensitive c_bool,
 	capReaddirPlus c_bool,
-	capDeleteAccess c_bool) {
+	capDeleteAccess c_bool,
+) {
 	C.hostAsgnCconninfo(conn, capCaseInsensitive, capReaddirPlus, capDeleteAccess)
 }
+
 func c_hostCstatvfsFromFusestatfs(stbuf *c_fuse_statvfs_t,
 	bsize c_uint64_t,
 	frsize c_uint64_t,
@@ -777,7 +795,8 @@ func c_hostCstatvfsFromFusestatfs(stbuf *c_fuse_statvfs_t,
 	favail c_uint64_t,
 	fsid c_uint64_t,
 	flag c_uint64_t,
-	namemax c_uint64_t) {
+	namemax c_uint64_t,
+) {
 	C.hostCstatvfsFromFusestatfs(stbuf,
 		bsize,
 		frsize,
@@ -791,6 +810,7 @@ func c_hostCstatvfsFromFusestatfs(stbuf *c_fuse_statvfs_t,
 		flag,
 		namemax)
 }
+
 func c_hostCstatFromFusestat(stbuf *c_fuse_stat_t,
 	dev c_uint64_t,
 	ino c_uint64_t,
@@ -806,7 +826,8 @@ func c_hostCstatFromFusestat(stbuf *c_fuse_stat_t,
 	blksize c_int64_t,
 	blocks c_int64_t,
 	birthtimSec c_int64_t, birthtimNsec c_int64_t,
-	flags c_uint32_t) {
+	flags c_uint32_t,
+) {
 	C.hostCstatFromFusestat(stbuf,
 		dev,
 		ino,
@@ -828,42 +849,55 @@ func c_hostCstatFromFusestat(stbuf *c_fuse_stat_t,
 		birthtimNsec,
 		flags)
 }
+
 func c_hostAsgnCfileinfo(fi *c_struct_fuse_file_info,
 	direct_io c_bool,
 	keep_cache c_bool,
 	nonseekable c_bool,
-	fh c_uint64_t) {
+	fh c_uint64_t,
+) {
 	C.hostAsgnCfileinfo(fi,
 		direct_io,
 		keep_cache,
 		nonseekable,
 		fh)
 }
+
 func c_hostFilldir(filler c_fuse_fill_dir_t,
-	buf unsafe.Pointer, name *c_char, stbuf *c_fuse_stat_t, off c_fuse_off_t) c_int {
+	buf unsafe.Pointer, name *c_char, stbuf *c_fuse_stat_t, off c_fuse_off_t,
+) c_int {
 	return C.hostFilldir(filler, buf, name, stbuf, off)
 }
+
 func c_hostStaticInit() {
 	C.hostStaticInit()
 }
+
 func c_hostFuseInit() c_int {
 	return C.hostFuseInit()
 }
+
 func c_hostMount(argc c_int, argv **c_char, data unsafe.Pointer) c_int {
 	return C.hostMount(argc, argv, data)
 }
+
 func c_hostUnmount(fuse *c_struct_fuse, mountpoint *c_char) c_int {
 	return C.hostUnmount(fuse, mountpoint)
 }
+
 func c_hostNotify(fuse *c_struct_fuse, path *c_char, action c_uint32_t) c_int {
 	return C.hostNotify(fuse, path, action)
 }
+
 func c_hostOptSet(opt *c_struct_fuse_opt,
-	templ *c_char, offset c_fuse_opt_offset_t, value c_int) {
+	templ *c_char, offset c_fuse_opt_offset_t, value c_int,
+) {
 	C.hostOptSet(opt, templ, offset, value)
 }
+
 func c_hostOptParse(args *c_struct_fuse_args, data unsafe.Pointer, opts *c_struct_fuse_opt,
-	nonopts c_bool) c_int {
+	nonopts c_bool,
+) c_int {
 	return C.hostOptParse(args, data, opts, nonopts)
 }
 
@@ -934,13 +968,15 @@ func go_hostOpen(path0 *c_char, fi0 *c_struct_fuse_file_info) (errc0 c_int) {
 
 //export go_hostRead
 func go_hostRead(path0 *c_char, buff0 *c_char, size0 c_size_t, ofst0 c_fuse_off_t,
-	fi0 *c_struct_fuse_file_info) (nbyt0 c_int) {
+	fi0 *c_struct_fuse_file_info,
+) (nbyt0 c_int) {
 	return hostRead(path0, buff0, size0, ofst0, fi0)
 }
 
 //export go_hostWrite
 func go_hostWrite(path0 *c_char, buff0 *c_char, size0 c_size_t, ofst0 c_fuse_off_t,
-	fi0 *c_struct_fuse_file_info) (nbyt0 c_int) {
+	fi0 *c_struct_fuse_file_info,
+) (nbyt0 c_int) {
 	return hostWrite(path0, buff0, size0, ofst0, fi0)
 }
 
@@ -966,7 +1002,8 @@ func go_hostFsync(path0 *c_char, datasync c_int, fi0 *c_struct_fuse_file_info) (
 
 //export go_hostSetxattr
 func go_hostSetxattr(path0 *c_char, name0 *c_char, buff0 *c_char, size0 c_size_t,
-	flags c_int) (errc0 c_int) {
+	flags c_int,
+) (errc0 c_int) {
 	return hostSetxattr(path0, name0, buff0, size0, flags)
 }
 
@@ -993,7 +1030,8 @@ func go_hostOpendir(path0 *c_char, fi0 *c_struct_fuse_file_info) (errc0 c_int) {
 //export go_hostReaddir
 func go_hostReaddir(path0 *c_char,
 	buff0 unsafe.Pointer, fill0 c_fuse_fill_dir_t, ofst0 c_fuse_off_t,
-	fi0 *c_struct_fuse_file_info) (errc0 c_int) {
+	fi0 *c_struct_fuse_file_info,
+) (errc0 c_int) {
 	return hostReaddir(path0, buff0, fill0, ofst0, fi0)
 }
 
@@ -1029,13 +1067,15 @@ func go_hostCreate(path0 *c_char, mode0 c_fuse_mode_t, fi0 *c_struct_fuse_file_i
 
 //export go_hostFtruncate
 func go_hostFtruncate(path0 *c_char, size0 c_fuse_off_t,
-	fi0 *c_struct_fuse_file_info) (errc0 c_int) {
+	fi0 *c_struct_fuse_file_info,
+) (errc0 c_int) {
 	return hostFtruncate(path0, size0, fi0)
 }
 
 //export go_hostFgetattr
 func go_hostFgetattr(path0 *c_char, stat0 *c_fuse_stat_t,
-	fi0 *c_struct_fuse_file_info) (errc0 c_int) {
+	fi0 *c_struct_fuse_file_info,
+) (errc0 c_int) {
 	return hostFgetattr(path0, stat0, fi0)
 }
 
@@ -1046,7 +1086,8 @@ func go_hostUtimens(path0 *c_char, tmsp0 *c_fuse_timespec_t) (errc0 c_int) {
 
 //export go_hostGetpath
 func go_hostGetpath(path0 *c_char, buff0 *c_char, size0 c_size_t,
-	fi0 *c_struct_fuse_file_info) (errc0 c_int) {
+	fi0 *c_struct_fuse_file_info,
+) (errc0 c_int) {
 	return hostGetpath(path0, buff0, size0, fi0)
 }
 

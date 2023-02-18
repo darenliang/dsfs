@@ -1,9 +1,10 @@
 package main
 
 import (
-	jsoniter "github.com/json-iterator/go"
 	"path/filepath"
 	"strings"
+
+	jsoniter "github.com/json-iterator/go"
 )
 
 // json uses json-iterator's json serializer for better performance

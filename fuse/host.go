@@ -237,7 +237,8 @@ func hostOpen(path0 *c_char, fi0 *c_struct_fuse_file_info) (errc0 c_int) {
 }
 
 func hostRead(path0 *c_char, buff0 *c_char, size0 c_size_t, ofst0 c_fuse_off_t,
-	fi0 *c_struct_fuse_file_info) (nbyt0 c_int) {
+	fi0 *c_struct_fuse_file_info,
+) (nbyt0 c_int) {
 	defer recoverAsErrno(&nbyt0)
 	fsop := hostHandleGet(c_fuse_get_context().private_data).fsop
 	path := c_GoString(path0)
@@ -247,7 +248,8 @@ func hostRead(path0 *c_char, buff0 *c_char, size0 c_size_t, ofst0 c_fuse_off_t,
 }
 
 func hostWrite(path0 *c_char, buff0 *c_char, size0 c_size_t, ofst0 c_fuse_off_t,
-	fi0 *c_struct_fuse_file_info) (nbyt0 c_int) {
+	fi0 *c_struct_fuse_file_info,
+) (nbyt0 c_int) {
 	defer recoverAsErrno(&nbyt0)
 	fsop := hostHandleGet(c_fuse_get_context().private_data).fsop
 	path := c_GoString(path0)
@@ -298,7 +300,8 @@ func hostFsync(path0 *c_char, datasync c_int, fi0 *c_struct_fuse_file_info) (err
 }
 
 func hostSetxattr(path0 *c_char, name0 *c_char, buff0 *c_char, size0 c_size_t,
-	flags c_int) (errc0 c_int) {
+	flags c_int,
+) (errc0 c_int) {
 	defer recoverAsErrno(&errc0)
 	fsop := hostHandleGet(c_fuse_get_context().private_data).fsop
 	path := c_GoString(path0)
@@ -375,7 +378,8 @@ func hostOpendir(path0 *c_char, fi0 *c_struct_fuse_file_info) (errc0 c_int) {
 }
 
 func hostReaddir(path0 *c_char, buff0 unsafe.Pointer, fill0 c_fuse_fill_dir_t, ofst0 c_fuse_off_t,
-	fi0 *c_struct_fuse_file_info) (errc0 c_int) {
+	fi0 *c_struct_fuse_file_info,
+) (errc0 c_int) {
 	defer recoverAsErrno(&errc0)
 	fsop := hostHandleGet(c_fuse_get_context().private_data).fsop
 	path := c_GoString(path0)
@@ -498,7 +502,8 @@ func hostFtruncate(path0 *c_char, size0 c_fuse_off_t, fi0 *c_struct_fuse_file_in
 }
 
 func hostFgetattr(path0 *c_char, stat0 *c_fuse_stat_t,
-	fi0 *c_struct_fuse_file_info) (errc0 c_int) {
+	fi0 *c_struct_fuse_file_info,
+) (errc0 c_int) {
 	defer recoverAsErrno(&errc0)
 	fsop := hostHandleGet(c_fuse_get_context().private_data).fsop
 	path := c_GoString(path0)
@@ -526,7 +531,8 @@ func hostUtimens(path0 *c_char, tmsp0 *c_fuse_timespec_t) (errc0 c_int) {
 }
 
 func hostGetpath(path0 *c_char, buff0 *c_char, size0 c_size_t,
-	fi0 *c_struct_fuse_file_info) (errc0 c_int) {
+	fi0 *c_struct_fuse_file_info,
+) (errc0 c_int) {
 	defer recoverAsErrno(&errc0)
 	fsop := hostHandleGet(c_fuse_get_context().private_data).fsop
 	intf, ok := fsop.(FileSystemGetpath)

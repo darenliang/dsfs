@@ -185,7 +185,7 @@ func TestOptParse(t *testing.T) {
 	}
 
 	if !s || !longbool || "LONG" != long ||
-		!Xbool || 0xabc != X || 0777 != O || !Ibool || 0xabc != I ||
+		!Xbool || 0xabc != X || 0o777 != O || !Ibool || 0xabc != I ||
 		"string" != S || "value" != V {
 		t.Error()
 	}

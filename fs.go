@@ -4,13 +4,14 @@ import (
 	"crypto/sha1"
 	"encoding/base64"
 	"errors"
-	"github.com/bwmarrin/discordgo"
-	"github.com/darenliang/dsfs/fuse"
-	"go.uber.org/zap"
 	"path/filepath"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/bwmarrin/discordgo"
+	"github.com/darenliang/dsfs/fuse"
+	"go.uber.org/zap"
 )
 
 type Dsfs struct {
@@ -358,7 +359,7 @@ func (fs *Dsfs) Getattr(path string, stat *fuse.Stat_t, fh uint64) int {
 
 	// Check open map
 	if file, ok := fs.open[path]; ok {
-		stat.Mode = fuse.S_IFREG | 0777
+		stat.Mode = fuse.S_IFREG | 0o777
 		stat.Size = file.cache.Size()
 		stat.Ctim = fuse.NewTimespec(file.ctim)
 		stat.Mtim = fuse.NewTimespec(file.mtim)
@@ -370,12 +371,12 @@ func (fs *Dsfs) Getattr(path string, stat *fuse.Stat_t, fh uint64) int {
 		return -fuse.ENOENT
 	}
 	if tx.Type == FileType {
-		stat.Mode = fuse.S_IFREG | 0777
+		stat.Mode = fuse.S_IFREG | 0o777
 		stat.Size = tx.Size
 		stat.Ctim = fuse.NewTimespec(tx.Ctim)
 		stat.Mtim = fuse.NewTimespec(tx.Mtim)
 	} else {
-		stat.Mode = fuse.S_IFDIR | 0777
+		stat.Mode = fuse.S_IFDIR | 0o777
 	}
 	return 0
 }
@@ -646,7 +647,7 @@ func (fs *Dsfs) Readdir(
 	fs.lock.Lock()
 	defer fs.lock.Unlock()
 
-	fill(".", &fuse.Stat_t{Mode: fuse.S_IFDIR | 0777}, 0)
+	fill(".", &fuse.Stat_t{Mode: fuse.S_IFDIR | 0o777}, 0)
 	fill("..", nil, 0)
 	it := fs.db.Iterator(path)
 	for key, tx, ok := it.Next(); ok; key, tx, ok = it.Next() {
@@ -660,13 +661,13 @@ func (fs *Dsfs) Readdir(
 		name := filepath.Base(key)
 		if tx.Type == FileType {
 			fill(name, &fuse.Stat_t{
-				Mode: fuse.S_IFREG | 0777,
+				Mode: fuse.S_IFREG | 0o777,
 				Size: tx.Size,
 				Ctim: fuse.NewTimespec(tx.Ctim),
 				Mtim: fuse.NewTimespec(tx.Mtim),
 			}, 0)
 		} else {
-			fill(name, &fuse.Stat_t{Mode: fuse.S_IFDIR | 0777}, 0)
+			fill(name, &fuse.Stat_t{Mode: fuse.S_IFDIR | 0o777}, 0)
 		}
 	}
 	for key, val := range fs.open {
@@ -675,7 +676,7 @@ func (fs *Dsfs) Readdir(
 		}
 		name := filepath.Base(key)
 		fill(name, &fuse.Stat_t{
-			Mode: fuse.S_IFREG | 0777,
+			Mode: fuse.S_IFREG | 0o777,
 			Size: val.cache.Size(),
 			Ctim: fuse.NewTimespec(val.ctim),
 			Mtim: fuse.NewTimespec(val.mtim),

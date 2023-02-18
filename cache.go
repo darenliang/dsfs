@@ -1,9 +1,10 @@
 package main
 
 import (
-	"go.skia.org/infra/go/util/limitwriter"
 	"io"
 	"os"
+
+	"go.skia.org/infra/go/util/limitwriter"
 )
 
 // Cache provides an interface to cache a file

@@ -279,7 +279,7 @@ type FileSystemInterface interface {
 	Fsync(path string, datasync bool, fh uint64) int
 
 	// Lock performs a file locking operation.
-	//Lock(path string, cmd int, lock *Lock_t, fh uint64) int
+	// Lock(path string, cmd int, lock *Lock_t, fh uint64) int
 
 	// Opendir opens a directory.
 	Opendir(path string) (int, uint64)
@@ -353,8 +353,10 @@ type FileSystemSetchgtime interface {
 // to the OS.
 type Error int
 
-var errorStringMap map[Error]string
-var errorStringOnce sync.Once
+var (
+	errorStringMap  map[Error]string
+	errorStringOnce sync.Once
+)
 
 func (self Error) Error() string {
 	errorStringOnce.Do(func() {
@@ -387,8 +389,7 @@ var _ error = (*Error)(nil)
 // FileSystemBase provides default implementations of the methods in FileSystemInterface.
 // The default implementations are either empty or return -ENOSYS to signal that the
 // file system does not implement a particular operation to the FUSE layer.
-type FileSystemBase struct {
-}
+type FileSystemBase struct{}
 
 // Init is called when the file system is created.
 // The FileSystemBase implementation does nothing.
@@ -553,7 +554,8 @@ func (*FileSystemBase) Opendir(path string) (int, uint64) {
 func (*FileSystemBase) Readdir(path string,
 	fill func(name string, stat *Stat_t, ofst int64) bool,
 	ofst int64,
-	fh uint64) int {
+	fh uint64,
+) int {
 	return -ENOSYS
 }
 

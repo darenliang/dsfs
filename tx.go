@@ -4,10 +4,11 @@ import (
 	"bufio"
 	"bytes"
 	"fmt"
+	"time"
+
 	"github.com/bwmarrin/discordgo"
 	"github.com/valyala/fasthttp"
 	"go.uber.org/zap"
-	"time"
 )
 
 type Tx struct {

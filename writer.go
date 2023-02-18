@@ -2,8 +2,9 @@ package main
 
 import (
 	"bytes"
-	"github.com/bwmarrin/discordgo"
 	"time"
+
+	"github.com/bwmarrin/discordgo"
 )
 
 type QueueItem struct {

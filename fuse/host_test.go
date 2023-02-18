@@ -37,7 +37,7 @@ func (self *testfs) Destroy() {
 func (self *testfs) Getattr(path string, stat *Stat_t, fh uint64) (errc int) {
 	switch path {
 	case "/":
-		stat.Mode = S_IFDIR | 0555
+		stat.Mode = S_IFDIR | 0o555
 		return 0
 	default:
 		return -ENOENT
@@ -47,7 +47,8 @@ func (self *testfs) Getattr(path string, stat *Stat_t, fh uint64) (errc int) {
 func (self *testfs) Readdir(path string,
 	fill func(name string, stat *Stat_t, ofst int64) bool,
 	ofst int64,
-	fh uint64) (errc int) {
+	fh uint64,
+) (errc int) {
 	fill(".", nil, 0)
 	fill("..", nil, 0)
 	return 0
@@ -61,7 +62,7 @@ func testHost(t *testing.T, unmount bool) {
 	defer os.Remove(path)
 	mntp := filepath.Join(path, "m")
 	if "windows" != runtime.GOOS {
-		err = os.Mkdir(mntp, os.FileMode(0755))
+		err = os.Mkdir(mntp, os.FileMode(0o755))
 		if nil != err {
 			panic(err)
 		}
