@@ -156,7 +156,7 @@ func (fs *Dsfs) Open(path string, flags int) (int, uint64) {
 	// other than the root folder, since some file explorers like to eagerly
 	// prob files for thumbnails, etc.
 	go func() {
-		buffer := make([]byte, MaxDiscordFileSize)
+		buffer := make([]byte, FileBlockSize)
 
 		dlID := func(id string, ofst int) error {
 			file, ok := fs.open[path]
@@ -195,14 +195,14 @@ func (fs *Dsfs) Open(path string, flags int) (int, uint64) {
 
 		// Download last piece to simulate torrent streaming behavior
 		lastIdx := len(tx.FileIDs) - 1
-		err = dlID(tx.FileIDs[lastIdx], lastIdx*MaxDiscordFileSize)
+		err = dlID(tx.FileIDs[lastIdx], lastIdx*FileBlockSize)
 		if err != nil {
 			return
 		}
 
 		// Download rest in order
 		for i := 1; i < lastIdx; i++ {
-			err = dlID(tx.FileIDs[i], i*MaxDiscordFileSize)
+			err = dlID(tx.FileIDs[i], i*FileBlockSize)
 			if err != nil {
 				return
 			}
@@ -544,7 +544,7 @@ func (fs *Dsfs) Release(path string, fh uint64) int {
 		up := func(idx int, fileID string, checksum string) error {
 			file.lock.RLock()
 
-			ofst := int64(idx * MaxDiscordFileSize)
+			ofst := int64(idx * FileBlockSize)
 
 			// We need to be very careful about this because we want lock with
 			// quick and correct contention.
@@ -554,7 +554,7 @@ func (fs *Dsfs) Release(path string, fh uint64) int {
 				return nil
 			}
 
-			end := ofst + MaxDiscordFileSize
+			end := ofst + FileBlockSize
 			if end > filesize {
 				end = filesize
 			}
@@ -583,8 +583,8 @@ func (fs *Dsfs) Release(path string, fh uint64) int {
 		}
 
 		filesize := file.cache.Size()
-		end := int(filesize / MaxDiscordFileSize)
-		if filesize%MaxDiscordFileSize != 0 {
+		end := int(filesize / FileBlockSize)
+		if filesize%FileBlockSize != 0 {
 			end++
 		}
 
@@ -723,10 +723,10 @@ func (fs *Dsfs) ApplyLiveTx(path string, tx *Tx) error {
 	file.cache.Truncate(tx.Size)
 	file.lock.Unlock()
 
-	buffer := make([]byte, MaxDiscordFileSize)
+	buffer := make([]byte, FileBlockSize)
 	for idx, checksum := range tx.Checksums {
 		file.lock.Lock()
-		ofst := int64(idx * MaxDiscordFileSize)
+		ofst := int64(idx * FileBlockSize)
 		// Something can happen between truncating and patching memory.
 		// In this case it's really hard to recover.
 		filesize = file.cache.Size()
@@ -734,7 +734,7 @@ func (fs *Dsfs) ApplyLiveTx(path string, tx *Tx) error {
 			file.lock.Unlock()
 			return errors.New("file changed while upcoming change is applied")
 		}
-		end := ofst + MaxDiscordFileSize
+		end := ofst + FileBlockSize
 		if end > filesize {
 			end = filesize
 		}

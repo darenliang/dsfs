@@ -5,7 +5,8 @@ import "time"
 const (
 	TxChannelName            = "tx"
 	DataChannelName          = "data"
-	MaxDiscordFileSize       = 8388119
+	MaxDiscordFileSize       = 26214400
+	FileBlockSize            = 8388119
 	MaxDiscordMessageRequest = 100
 	MaxDiscordFileCount      = 10
 	PollInterval             = 250 * time.Millisecond
