@@ -1,6 +1,7 @@
 package main
 
 import (
+	"os"
 	"sync/atomic"
 
 	"github.com/alecthomas/kingpin/v2"
@@ -26,8 +27,8 @@ var (
 )
 
 func main() {
-	kingpin.Flag("token", "Token").Short('t').Required().StringVar(&token)
-	kingpin.Flag("server", "Guild ID").Short('s').Required().StringVar(&guildID)
+	kingpin.Flag("token", "Token").Short('t').StringVar(&token)
+	kingpin.Flag("server", "Guild ID").Short('s').StringVar(&guildID)
 	kingpin.Flag("user", "Token is a user token").Short('u').BoolVar(&userToken)
 	kingpin.Flag("mount", "Mount point").Short('m').StringVar(&mount)
 	kingpin.Flag("compact", "Compact transactions").Short('x').BoolVar(&compact)
@@ -35,6 +36,18 @@ func main() {
 	kingpin.Flag("verbose", "Enable pprof and print debug logs").Short('v').BoolVar(&debug)
 	kingpin.Flag("options", "FUSE options").Short('o').StringsVar(&options)
 	kingpin.Parse()
+
+	if token == "" {
+		token = os.Getenv("DSFS_TOKEN")
+	}
+	if guildID == "" {
+		guildID = os.Getenv("DSFS_SERVER")
+	}
+
+	if token == "" || guildID == "" {
+		zap.S().Error("token, and server are required")
+		return
+	}
 
 	// Setup logger and debug endpoint if specified
 	logger, _ := zap.NewDevelopment()
