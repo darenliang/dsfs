@@ -90,11 +90,11 @@ To get more information about the available options:
 dsfs --help
 ```
 
-You can also use `DSFS_TOKEN` and `DSFS_SERVER` environment variables inplace of the `-t` and `-s` flags.
+You can also use `DSFS_TOKEN` and `DSFS_SERVER` environment variables in place of `-t` and `-s` flags.
 ```bash
-# use `set` instead of `export` on Windows cmd
-export DSFS_TOKEN=<bot tokem>
-export DSFS_SERVER=<server id>
+# use `set` instead of `export` on Windows
+export DSFS_TOKEN=<Bot token>
+export DSFS_SERVER=<Server ID>
 dsfs -m <Mount point>
 ```
 

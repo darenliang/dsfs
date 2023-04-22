@@ -40,12 +40,13 @@ func main() {
 	if token == "" {
 		token = os.Getenv("DSFS_TOKEN")
 	}
+
 	if guildID == "" {
 		guildID = os.Getenv("DSFS_SERVER")
 	}
 
 	if token == "" || guildID == "" {
-		zap.S().Error("token, and server are required")
+		zap.S().Error("token and guild id are required")
 		return
 	}
 
