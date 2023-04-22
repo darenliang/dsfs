@@ -90,6 +90,14 @@ To get more information about the available options:
 dsfs --help
 ```
 
+You can also use `DSFS_TOKEN` and `DSFS_SERVER` environment variables inplace of the `-t` and `-s` flags.
+```bash
+# use `set` instead of `export` on Windows cmd
+export DSFS_TOKEN=<bot tokem>
+export DSFS_SERVER=<server id>
+dsfs -m <Mount point>
+```
+
 ## Common fixes to issues
 
 - If you are using a bot token, you must allow the Message Content Intent for
