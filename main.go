@@ -1,6 +1,8 @@
 package main
 
 import (
+	"github.com/mattn/go-colorable"
+	"go.uber.org/zap/zapcore"
 	"os"
 	"sync/atomic"
 
@@ -51,7 +53,13 @@ func main() {
 	}
 
 	// Setup logger and debug endpoint if specified
-	logger, _ := zap.NewDevelopment()
+	config := zap.NewDevelopmentEncoderConfig()
+	config.EncodeLevel = zapcore.CapitalColorLevelEncoder
+	logger := zap.New(zapcore.NewCore(
+		zapcore.NewConsoleEncoder(config),
+		zapcore.AddSync(colorable.NewColorableStdout()),
+		zapcore.DebugLevel,
+	))
 	if debug {
 		zap.ReplaceGlobals(logger)
 		go func() {

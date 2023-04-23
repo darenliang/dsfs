@@ -7,6 +7,7 @@ require (
 	github.com/bwmarrin/discordgo v0.27.1
 	github.com/hashicorp/go-immutable-radix/v2 v2.0.0
 	github.com/json-iterator/go v1.1.12
+	github.com/mattn/go-colorable v0.1.13
 	github.com/valyala/fasthttp v1.45.0
 	go.skia.org/infra v0.0.0-20230418151255-2b944a5cb38c
 	go.uber.org/zap v1.24.0
@@ -19,6 +20,7 @@ require (
 	github.com/gorilla/websocket v1.4.2 // indirect
 	github.com/hashicorp/golang-lru/v2 v2.0.0 // indirect
 	github.com/klauspost/compress v1.16.3 // indirect
+	github.com/mattn/go-isatty v0.0.16 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.2 // indirect
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
