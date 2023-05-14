@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"github.com/mattn/go-colorable"
 	"go.uber.org/zap/zapcore"
 	"os"
@@ -22,6 +23,7 @@ var (
 	compact   bool
 	cache     string
 	debug     bool
+	port      int
 	options   []string
 	// We need to jankily expose dsfs for event handlers
 	dsfs      *Dsfs
@@ -36,6 +38,7 @@ func main() {
 	kingpin.Flag("compact", "Compact transactions").Short('x').BoolVar(&compact)
 	kingpin.Flag("cache", "Cache type").Short('c').Default("disk").EnumVar(&cache, "disk", "memory")
 	kingpin.Flag("verbose", "Enable pprof and print debug logs").Short('v').BoolVar(&debug)
+	kingpin.Flag("port", "Port to run pprof on").Short('p').Default("8000").IntVar(&port)
 	kingpin.Flag("options", "FUSE options").Short('o').StringsVar(&options)
 	kingpin.Parse()
 
@@ -63,8 +66,8 @@ func main() {
 	if debug {
 		zap.ReplaceGlobals(logger)
 		go func() {
-			zap.S().Info("pprof running on port 8000")
-			_ = fasthttp.ListenAndServe(":8000", pprofhandler.PprofHandler)
+			zap.S().Infof("pprof running on port %d", port)
+			_ = fasthttp.ListenAndServe(fmt.Sprintf(":%d", port), pprofhandler.PprofHandler)
 		}()
 	} else {
 		zap.ReplaceGlobals(logger.WithOptions(zap.IncreaseLevel(zap.InfoLevel)))
