@@ -8,10 +8,10 @@ require (
 	github.com/hashicorp/go-immutable-radix/v2 v2.0.0
 	github.com/json-iterator/go v1.1.12
 	github.com/mattn/go-colorable v0.1.13
-	github.com/valyala/fasthttp v1.47.0
-	go.skia.org/infra v0.0.0-20230513014625-6c6967f8c232
+	github.com/valyala/fasthttp v1.48.0
+	go.skia.org/infra v0.0.0-20230630200133-414f9688245c
 	go.uber.org/zap v1.24.0
-	golang.org/x/exp v0.0.0-20230510235704-dd950f8aeaea
+	golang.org/x/exp v0.0.0-20230626212559-97b1e661b5df
 )
 
 require (

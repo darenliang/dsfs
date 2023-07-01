@@ -697,7 +697,7 @@ func (fs *Dsfs) Statfs(path string, stat *fuse.Statfs_t) int {
 	// None of this should matter.
 	stat.Bsize = 4096
 	stat.Frsize = stat.Bsize
-	stat.Blocks = 256 * 1024 * 1024
+	stat.Blocks = 256 * 1024 * 1024 * 1024
 	stat.Bfree = stat.Blocks
 	stat.Bavail = stat.Blocks
 	return 0
