@@ -125,6 +125,17 @@ func (iter *MapDBIterator) Next() (string, *Tx, bool) {
 	return entry.Key, entry.Tx, entry.Ok
 }
 
+func GetNewDB(dbType string) DB {
+	switch dbType {
+	case "radix":
+		return NewRadixDB()
+	case "map":
+		return NewMapDB()
+	default:
+		panic("unknown db type")
+	}
+}
+
 // prepareChannels prepares the tx and data channels
 // creating channels if necessary
 func prepareChannels(dg *discordgo.Session, guildID string) (*discordgo.Channel, *discordgo.Channel, error) {
@@ -161,8 +172,8 @@ func prepareChannels(dg *discordgo.Session, guildID string) (*discordgo.Channel,
 // setupDB setups the in-mem database
 // This function needs to be refactored; it looks really gross in its current
 // state.
-func setupDB(dg *discordgo.Session, txChannel *discordgo.Channel, compact bool) (DB, error) {
-	db := NewRadixDB()
+func setupDB(dg *discordgo.Session, txChannel *discordgo.Channel, compact bool, dbType string) (DB, error) {
+	db := GetNewDB(dbType)
 
 	txBuffer := &bytes.Buffer{}
 	var pinnedMsg *discordgo.Message

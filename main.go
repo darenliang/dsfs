@@ -21,7 +21,8 @@ var (
 	guildID   string
 	mount     string
 	compact   bool
-	cache     string
+	cacheType string
+	dbType    string
 	debug     bool
 	port      int
 	options   []string
@@ -36,7 +37,8 @@ func main() {
 	kingpin.Flag("user", "Token is a user token").Short('u').BoolVar(&userToken)
 	kingpin.Flag("mount", "Mount point").Short('m').StringVar(&mount)
 	kingpin.Flag("compact", "Compact transactions").Short('x').BoolVar(&compact)
-	kingpin.Flag("cache", "Cache type").Short('c').Default("disk").EnumVar(&cache, "disk", "memory")
+	kingpin.Flag("cache", "Cache type").Short('c').Default("disk").EnumVar(&cacheType, "disk", "memory")
+	kingpin.Flag("db", "Database type").Short('d').Default("radix").EnumVar(&dbType, "radix", "map")
 	kingpin.Flag("verbose", "Enable pprof and print debug logs").Short('v').BoolVar(&debug)
 	kingpin.Flag("port", "Port to run pprof on").Short('p').Default("8000").IntVar(&port)
 	kingpin.Flag("options", "FUSE options").Short('o').StringsVar(&options)
@@ -100,7 +102,7 @@ func main() {
 		return
 	}
 
-	db, err := setupDB(dg, txChannel, compact)
+	db, err := setupDB(dg, txChannel, compact, dbType)
 	if err != nil {
 		zap.S().Error(err)
 		return
@@ -108,7 +110,7 @@ func main() {
 
 	writer := setupWriter(dg, txChannel.ID, dataChannel.ID)
 
-	dsfs = NewDsfs(dg, db, writer, txChannel, dataChannel, cache)
+	dsfs = NewDsfs(dg, db, writer, txChannel, dataChannel, cacheType)
 	dsfsReady.Store(true)
 
 	host := fuse.NewFileSystemHost(dsfs)
