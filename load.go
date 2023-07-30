@@ -14,8 +14,8 @@ type Load struct {
 // sortRanges sorts ranges by start index
 // This uses generics for faster sorting performance so go 1.18+ is required
 func (load *Load) sortRanges() {
-	slices.SortFunc(load.ranges, func(a, b Range) bool {
-		return a.start < b.start
+	slices.SortFunc(load.ranges, func(a, b Range) int {
+		return int(a.start - b.start)
 	})
 }
 

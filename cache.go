@@ -3,8 +3,6 @@ package main
 import (
 	"io"
 	"os"
-
-	"go.skia.org/infra/go/util/limitwriter"
 )
 
 // Cache provides an interface to cache a file
@@ -77,7 +75,7 @@ func (c *DiskCache) ReadRange(start int64, end int64, buffer []byte) int64 {
 // WriteRange writes a range of bytes to the cache
 func (c *DiskCache) WriteRange(start int64, end int64, buffer []byte) int64 {
 	c.file.Seek(start, io.SeekStart)
-	write, _ := limitwriter.New(c.file, int(end-start)).Write(buffer)
+	write, _ := NewLimitWriter(c.file, int(end-start)).Write(buffer)
 	return int64(write)
 }
 

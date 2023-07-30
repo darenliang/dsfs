@@ -4,6 +4,7 @@ import (
 	"crypto/sha1"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"sync"
 	"sync/atomic"
@@ -16,14 +17,15 @@ import (
 
 type Dsfs struct {
 	fuse.FileSystemBase
-	dg          *discordgo.Session
-	db          DB
-	writer      *Writer
-	txChannel   *discordgo.Channel
-	dataChannel *discordgo.Channel
-	open        map[string]*FileData
-	lock        sync.Mutex
-	cacheType   string
+	dg                  *discordgo.Session
+	db                  DB
+	writer              *Writer
+	txChannel           *discordgo.Channel
+	dataChannel         *discordgo.Channel
+	open                map[string]*FileData
+	lock                sync.Mutex
+	idempotencyEnforcer sync.Map
+	cacheType           string
 }
 
 type FileData struct {
@@ -45,6 +47,7 @@ func NewDsfs(dg *discordgo.Session, db DB, writer *Writer, txChannel *discordgo.
 	dsfs.dataChannel = dataChannel
 	dsfs.open = make(map[string]*FileData)
 	dsfs.cacheType = cacheType
+	dsfs.idempotencyEnforcer = sync.Map{}
 	return &dsfs
 }
 
@@ -147,67 +150,6 @@ func (fs *Dsfs) Open(path string, flags int) (int, uint64) {
 		ctim:    tx.Ctim,
 	}
 	fs.lock.Unlock()
-
-	// Load entire file in mem in the background.
-	// This solution is really hacky and isn't great and loading files
-	// incrementally is preferable.
-	//
-	// If memory is really constrained, it is better to save files in a folder
-	// other than the root folder, since some file explorers like to eagerly
-	// prob files for thumbnails, etc.
-	go func() {
-		buffer := make([]byte, FileBlockSize)
-
-		dlID := func(id string, ofst int) error {
-			file, ok := fs.open[path]
-			if !ok {
-				err := errors.New("file no longer exists")
-				zap.S().Warn(err)
-				return err
-			}
-			n, err := getDataFile(fs.dataChannel.ID, id, buffer)
-			if err != nil {
-				zap.S().Warnw("network error with Discord", "error", err)
-				return err
-			}
-			file.lock.Lock()
-			file.cache.WriteRange(int64(ofst), int64(ofst+n), buffer[:n])
-			file.load.addRange(int64(ofst), int64(ofst+n))
-			file.lock.Unlock()
-			return nil
-		}
-
-		// Quick check to see if file parts exist
-		if len(tx.FileIDs) == 0 {
-			return
-		}
-
-		// Download first piece
-		err := dlID(tx.FileIDs[0], 0)
-		if err != nil {
-			return
-		}
-
-		// Quick check to see if there is only one file part
-		if len(tx.FileIDs) == 1 {
-			return
-		}
-
-		// Download last piece to simulate torrent streaming behavior
-		lastIdx := len(tx.FileIDs) - 1
-		err = dlID(tx.FileIDs[lastIdx], lastIdx*FileBlockSize)
-		if err != nil {
-			return
-		}
-
-		// Download rest in order
-		for i := 1; i < lastIdx; i++ {
-			err = dlID(tx.FileIDs[i], i*FileBlockSize)
-			if err != nil {
-				return
-			}
-		}
-	}()
 
 	return 0, 1
 }
@@ -428,36 +370,95 @@ func (fs *Dsfs) Read(path string, buff []byte, ofst int64, fh uint64) int {
 		fs.lock.Unlock()
 		return -fuse.ENOENT
 	}
-	fs.lock.Unlock()
 
-	buffLen := int64(len(buff))
-	var bytesReady int64
-	retries := 0
-
-	file.lock.RLock()
-	for {
-		filesize := file.cache.Size()
-		bytesReady = file.load.bytesReady(ofst)
-		if bytesReady > 0 {
-			if bytesReady > buffLen {
-				bytesReady = buffLen
-			}
-			if ofst+bytesReady > filesize {
-				bytesReady = filesize - ofst
-			}
-			break
-		}
-		if retries >= MaxRetries {
-			file.lock.RUnlock()
-			return 0
-		}
-		retries++
-		file.lock.RUnlock()
-		time.Sleep(PollInterval)
-		file.lock.RLock()
+	tx, ok := fs.db.Get(path)
+	if !ok {
+		fs.lock.Unlock()
+		return -fuse.ENOENT
 	}
 
-	bytesRead := file.cache.ReadRange(ofst, ofst+bytesReady, buff)
+	fs.lock.Unlock()
+
+	// Check if ofst is out of bounds
+	if ofst < 0 || ofst >= tx.Size {
+		return 0
+	}
+
+	buffLen := int64(len(buff))
+	// Check if ofst+buffLen is out of bounds
+	if ofst+buffLen >= tx.Size {
+		buffLen = tx.Size - ofst
+	}
+
+	buffer := make([]byte, FileBlockSize)
+	dlID := func(id string, ofst int) error {
+		n, err := getDataFile(fs.dataChannel.ID, id, buffer)
+		if err != nil {
+			zap.S().Warnw("network error with Discord", "error", err)
+			return err
+		}
+		file.lock.Lock()
+		file.cache.WriteRange(int64(ofst), int64(ofst+n), buffer[:n])
+		file.load.addRange(int64(ofst), int64(ofst+n))
+		file.lock.Unlock()
+		return nil
+	}
+
+	// Calculate start and end index
+	startIndex := ofst / FileBlockSize
+	endIndex := (ofst + buffLen) / FileBlockSize
+	extend := false
+	if endIndex < tx.Size/FileBlockSize {
+		extend = true
+		endIndex++
+	}
+
+	// Check if all required data are in mem
+	startOfst := startIndex * FileBlockSize
+	endOfst := endIndex*FileBlockSize + FileBlockSize
+	if endOfst > tx.Size {
+		endOfst = tx.Size
+	}
+	if file.load.isReady(startOfst, endOfst) {
+		file.lock.RLock()
+		bytesRead := file.cache.ReadRange(ofst, ofst+buffLen, buff)
+		file.lock.RUnlock()
+		return int(bytesRead)
+	}
+
+	for i := startIndex; i <= endIndex; i++ {
+		ofstCap := i*FileBlockSize + FileBlockSize
+		if ofstCap > tx.Size {
+			ofstCap = tx.Size
+		}
+		if file.load.isReady(ofst, ofstCap) {
+			continue
+		}
+
+		if i == endIndex && extend {
+			key := fmt.Sprintf("%s-%d", tx.FileIDs[i], i)
+			if _, loaded := fs.idempotencyEnforcer.LoadOrStore(key, true); loaded {
+				continue
+			}
+			zap.S().Debugw("Reading block asynchronously",
+				"path", path,
+				"block", i,
+			)
+			go dlID(tx.FileIDs[i], int(i*FileBlockSize))
+		} else {
+			zap.S().Debugw("Reading block",
+				"path", path,
+				"block", i,
+			)
+			err := dlID(tx.FileIDs[i], int(i*FileBlockSize))
+			if err != nil {
+				return 0
+			}
+		}
+	}
+
+	file.lock.RLock()
+	bytesRead := file.cache.ReadRange(ofst, ofst+buffLen, buff)
 	file.lock.RUnlock()
 
 	return int(bytesRead)
@@ -536,7 +537,7 @@ func (fs *Dsfs) Release(path string, fh uint64) int {
 		if file.syncing.Load() {
 			return
 		}
-		zap.S().Debugf("uploading %s in the background", path)
+		zap.S().Debugf("Uploading %s in the background", path)
 		file.syncing.Store(true)
 		defer file.syncing.Store(false)
 		defer func() { file.dirty = false }()
